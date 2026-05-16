@@ -1,0 +1,2460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Claude :: Neural Graph</title>
+<style>
+  :root {
+    --bg: #02030a;
+    --panel: rgba(8,10,22,0.78);
+    --border: #1a2138;
+    --text: #e8ecf4;
+    --dim: #7a8294;
+    --accent: #4fd6ff;
+  }
+  html, body { margin: 0; padding: 0; height: 100%; background: radial-gradient(ellipse at 50% 50%, #0a1228 0%, #02030a 60%, #000005 100%); color: var(--text); font-family: 'JetBrains Mono', 'Consolas', monospace; overflow: hidden; }
+  #graph { position: absolute; inset: 0; }
+
+  .panel {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    box-shadow: 0 4px 24px rgba(0,0,0,0.4), 0 0 0 1px rgba(136,192,208,0.04) inset;
+  }
+
+  #ui {
+    position: absolute; top: 14px; left: 14px; z-index: 10;
+    padding: 14px 16px; width: 280px;
+  }
+  #ui h1 { font-size: 12px; margin: 0 0 4px 0; letter-spacing: 2px; color: var(--accent); font-weight: 500; }
+  #ui .gen { color: var(--dim); font-size: 10px; }
+  .legend { margin-top: 12px; font-size: 11px; }
+  .legend div { display: flex; align-items: center; gap: 8px; padding: 3px 0; cursor: pointer; user-select: none; transition: opacity .2s; }
+  .legend div.muted { opacity: 0.3; }
+  .legend .dot { width: 9px; height: 9px; border-radius: 50%; box-shadow: 0 0 10px currentColor, 0 0 4px currentColor; }
+  .legend .count { margin-left: auto; color: var(--dim); }
+  #search { width: 100%; box-sizing: border-box; margin-top: 10px; padding: 7px 10px; background: #0e1224; color: var(--text); border: 1px solid var(--border); border-radius: 5px; font-family: inherit; font-size: 12px; outline: none; transition: border-color .2s; }
+  #search:focus { border-color: var(--accent); }
+
+  #info {
+    position: absolute; z-index: 10;
+    padding: 12px 14px; max-width: 320px; max-height: 50vh; overflow-y: auto;
+    font-size: 11px; display: none; pointer-events: auto;
+    box-shadow: 0 4px 18px rgba(0,0,0,0.55);
+    transition: opacity 0.12s ease;
+  }
+  #info.docked { bottom: 14px; left: 14px; max-width: 460px; max-height: 60vh; font-size: 12px; }
+  #info::-webkit-scrollbar { width: 6px; }
+  #info::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  #info .meta-row { color: var(--dim); font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 8px; display: flex; gap: 12px; }
+  #info .meta-row .type-badge { color: var(--accent); }
+  #info h2 { margin: 0 0 10px 0; font-size: 15px; font-weight: 500; color: #eceff4; letter-spacing: 0.3px; }
+  #info .desc { color: #cdd5e0; line-height: 1.55; margin-bottom: 12px; }
+  #info .section { margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(120,140,180,0.1); }
+  #info .section-title { color: var(--accent); font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 6px; opacity: 0.8; }
+  #info .kv { color: var(--dim); font-size: 11px; line-height: 1.6; }
+  #info .kv b { color: #eceff4; font-weight: 400; }
+  #info .pill { display: inline-block; background: rgba(136,192,208,0.08); border: 1px solid rgba(136,192,208,0.2); border-radius: 4px; padding: 2px 8px; margin: 2px 4px 2px 0; font-size: 10px; color: #cdd5e0; }
+  #info .pill.warn { background: rgba(235,203,139,0.08); border-color: rgba(235,203,139,0.25); color: #ebcb8b; }
+  #info .preview { font-family: inherit; font-size: 11px; line-height: 1.55; color: #b8c1d0; background: rgba(0,0,0,0.25); padding: 8px 10px; border-radius: 4px; margin-top: 4px; max-height: 130px; overflow-y: auto; }
+  #info a { color: var(--accent); text-decoration: none; word-break: break-all; }
+  #info a:hover { text-decoration: underline; }
+  #info .conn-list { display: flex; flex-wrap: wrap; gap: 4px; }
+  #info .conn { cursor: pointer; }
+
+  #stats { position: absolute; top: 14px; right: 14px; z-index: 10; font-size: 10px; color: var(--dim); text-align: right; padding: 8px 12px; letter-spacing: 1px; }
+  #stats .live { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #a3be8c; margin-right: 6px; box-shadow: 0 0 6px #a3be8c; animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
+
+  #toast { position: absolute; bottom: 14px; right: 14px; z-index: 11; padding: 8px 14px; font-size: 11px; color: var(--accent); display: none; }
+
+  #sessions {
+    position: absolute; top: 14px; right: 14px; z-index: 10;
+    padding: 10px 14px; font-size: 11px; max-width: 320px;
+    margin-top: 36px;
+  }
+  #sessions h3 { margin: 0 0 8px 0; font-size: 10px; letter-spacing: 1.5px; color: #ff6b6b; font-weight: 500; text-transform: uppercase; }
+  .sess { padding: 6px 0; border-top: 1px solid rgba(120,140,180,0.1); }
+  .sess:first-of-type { border-top: none; }
+  .sess .row { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; }
+  .sess .id { color: #ff8e8e; font-weight: 500; }
+  .sess .dot-live { width: 6px; height: 6px; border-radius: 50%; background: #ff5252; box-shadow: 0 0 8px #ff5252; display: inline-block; margin-right: 6px; animation: pulse 1.4s ease-in-out infinite; }
+  .sess .dot-idle { background: #555; box-shadow: none; animation: none; }
+  .sess .meta { color: var(--dim); font-size: 10px; margin-top: 2px; }
+  .sess .cur { color: #ffb84d; font-size: 10px; margin-top: 2px; word-break: break-all; }
+  #transcripts h3 { margin: 0 0 8px 0; font-size: 10px; letter-spacing: 1.5px; color: #4fd6ff; font-weight: 500; text-transform: uppercase; }
+
+  /* HINT / LEGEND panel — anchored bottom-center, collapsible */
+  #hint-toggle {
+    position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%);
+    z-index: 12; padding: 6px 14px; font-size: 10px; letter-spacing: 1.5px;
+    color: #9ad; cursor: pointer; user-select: none;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+    backdrop-filter: blur(8px);
+  }
+  #hint-toggle:hover { color: var(--accent); border-color: var(--accent); }
+  #hint-panel {
+    position: absolute; bottom: 48px; left: 50%; transform: translateX(-50%);
+    z-index: 11; width: 820px; max-width: 92vw; max-height: 64vh; overflow-y: auto;
+    padding: 14px 18px; font-size: 10.5px; line-height: 1.55;
+    display: none;
+  }
+  #hint-panel.open { display: block; }
+  #hint-panel h4 { margin: 12px 0 6px 0; font-size: 10px; color: var(--accent); letter-spacing: 1.5px; text-transform: uppercase; font-weight: 500; }
+  #hint-panel h4:first-child { margin-top: 0; }
+  #hint-panel .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 4px 14px; }
+  #hint-panel .row { display: flex; align-items: center; gap: 8px; padding: 2px 0; }
+  #hint-panel .sw { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; box-shadow: 0 0 8px currentColor, 0 0 3px currentColor; }
+  #hint-panel .sw.sq { border-radius: 2px; }
+  #hint-panel .sw.line { width: 18px; height: 3px; border-radius: 1px; box-shadow: 0 0 6px currentColor; }
+  #hint-panel .sw.tube { width: 18px; height: 5px; border-radius: 2px; background: linear-gradient(90deg, transparent, #5eff8a, transparent); border-top: 1px solid #fff; box-shadow: 0 0 8px #5eff8a; }
+  #hint-panel .lab { color: #cdd5e0; }
+  #hint-panel .desc { color: var(--dim); font-size: 9.5px; }
+  #hint-panel .bg-row { display: flex; justify-content: space-between; padding: 3px 0; border-top: 1px dashed rgba(120,140,180,0.08); }
+  #hint-panel .bg-row:first-child { border-top: none; }
+  #hint-panel .bg-name { color: #9ad; }
+  #hint-panel .bg-int { color: #ffaf5e; font-size: 9.5px; }
+  #hint-panel .bg-desc { color: var(--dim); font-size: 9.5px; flex: 1; padding: 0 10px; }
+  #hint-panel .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  #hint-panel .warn { color: #ff8e8e; }
+  #hint-panel .ok { color: #5eff8a; }
+  #hint-panel .amb { color: #ffc857; }
+</style>
+</head>
+<body>
+<div id="graph"></div>
+
+<div id="ui" class="panel">
+  <h1>NEURAL GRAPH</h1>
+  <div class="gen" id="gen-time">loading…</div>
+  <input id="search" placeholder="search node…" autocomplete="off" />
+  <div id="mode-toggle" style="display:flex; gap:4px; margin:6px 0; font-size:10px;">
+    <button id="mode-topology" class="mode-btn" style="flex:1; background:#1a1a1a; color:#888; border:1px solid #333; padding:4px 6px; cursor:pointer; border-radius:3px;">TOPOLOGY</button>
+    <button id="mode-activity" class="mode-btn active" style="flex:1; background:#3a2a2a; color:#fff; border:1px solid #ff5555; padding:4px 6px; cursor:pointer; border-radius:3px;">ACTIVITY</button>
+    <button id="mode-traffic" class="mode-btn" style="flex:1; background:#1a1a1a; color:#888; border:1px solid #333; padding:4px 6px; cursor:pointer; border-radius:3px;">TRAFFIC</button>
+  </div>
+  <div class="legend" id="legend"></div>
+</div>
+
+<div id="stats" class="panel"><span class="live"></span><span id="stats-text">– nodes · – edges</span></div>
+
+<div id="project-filter" class="panel" style="position:absolute; top:14px; left:50%; transform:translateX(-50%); z-index:11; padding:6px 10px; font-size:11px;">
+  <select id="project-filter-select" style="background:#0e1224; color:#cdd5e0; border:1px solid var(--border); border-radius:4px; padding:4px 8px; font-family:inherit; font-size:11px; outline:none; cursor:pointer; min-width:180px;">
+    <option value="">— ALL PROJECTS —</option>
+  </select>
+</div>
+
+<div id="sessions" class="panel" style="display:none">
+  <h3>ACTIVE SESSIONS</h3>
+  <div id="sessions-list"></div>
+</div>
+
+<div id="transcripts" class="panel" style="display:none; position:absolute; right:14px; bottom:14px; max-height:55vh; overflow-y:auto; padding:12px 14px; width:340px; font-size:11px; z-index:10;">
+</div>
+
+<div id="metrics" class="panel" style="display:none; position:absolute; left:14px; bottom:14px; max-height:55vh; overflow-y:auto; padding:10px 14px; width:300px; font-size:11px; z-index:10; line-height:1.5;">
+</div>
+
+<div id="growth" class="panel" style="display:none; position:absolute; left:50%; top:14px; transform:translateX(-50%); padding:8px 12px; width:560px; font-size:10px; z-index:9; cursor:pointer;">
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+    <span style="color:#888; letter-spacing:1px;">GROWTH</span>
+    <span id="growth-totals" style="color:#9ad" ></span>
+  </div>
+  <svg id="growth-chart" width="540" height="64" style="display:block;"></svg>
+  <div id="growth-legend" style="display:flex; gap:10px; font-size:9px; color:#777; margin-top:3px;"></div>
+  <div id="growth-digest" style="display:none; margin-top:8px; padding-top:8px; border-top:1px solid #222; font-size:10px; color:#aaa;"></div>
+</div>
+
+<div id="info" class="panel"></div>
+<div id="toast" class="panel">graph updated</div>
+
+<div id="hint-toggle" class="panel">? LEGEND</div>
+<div id="hint-panel" class="panel"></div>
+
+<script src="https://unpkg.com/three@0.149.0/build/three.min.js"></script>
+<script src="https://unpkg.com/3d-force-graph@1.73.0/dist/3d-force-graph.min.js"></script>
+<script src="graph_data.js?v=initial"></script>
+<script>
+// Bioluminescent neural palette — each type = distinct "neuron"
+const TYPE_COLOR = {
+  core:      '#fff5e6',  // warm-white star, hot center
+  project:   '#ff9c42',  // amber dopaminergic — active work
+  skill:     '#4fd6ff',  // electric cyan — tools, capability
+  mcp:       '#5ef0a8',  // bio-green — external connectors
+  memory:    '#b794ff',  // lavender — long-term storage
+  feedback:  '#ff6b8a',  // coral — corrective signal
+  user:      '#ffd84d',  // gold — you, special
+  reference: '#ff9bb3',  // peach — pointers
+  infra:     '#ff5fbf',  // magenta — external infra (servers/hosts I can reach)
+  learned_skill: '#ffe27a',  // bright gold — Voyager-pattern saved procedures (mastery glow)
+  decision: '#9affc8',       // mint — past architectural decisions (color-shifts by outcome)
+  goal:     '#ffaf5e',       // burnt orange — active goals (intent layer)
+  gap:      '#7e7eff',       // periwinkle — uncertainty / "I don't know" hotspots
+};
+const TYPE_SIZE = {
+  core: 7, project: 3.6, skill: 2.2, mcp: 2.2, feedback: 1.8, user: 2.0, memory: 1.3, reference: 1.8, infra: 2.4, learned_skill: 2.6, decision: 1.5, goal: 3.2, gap: 1.8,
+};
+// outcome-aware color override for decision nodes
+const DECISION_OUTCOME_COLOR = {
+  success: '#5eff8a',  // bright green
+  fail:    '#ff5f6f',  // red
+  partial: '#ffc857',  // amber
+};
+
+let GRAPH = null;
+let activeTypes = new Set(Object.keys(TYPE_COLOR));
+let lastBuildTime = null;
+let SESSIONS = {};         // {sid: sessionData} — live ones
+let SESSION_NODES = {};    // {sid: THREE.Object3D ghost} — rendered ghosts (per-session core)
+let CORE_SESS_MAP = {};    // {core_<sid8>: full_sid} — lookup for HOT_EDGES anchor IDs
+let GHOST_FADING = {};     // {sid: {start_ts, group}} — sessions in 30s fade-out
+function coreSessId(sid) { return 'core_' + (sid || '').slice(0, 8); }
+function sessShortLabel(sess) {
+  // priority: agent.name (Phase 2 future) → project_id → cwd basename → sess-XXXX
+  if (sess.agent_name) return sess.agent_name;
+  if (sess.project_id) return sess.project_id.replace(/^proj_/, '');
+  if (sess.cwd) {
+    const base = (sess.cwd || '').split(/[\\/]/).filter(Boolean).pop();
+    if (base && base.length < 24) return base;
+  }
+  return 'sess-' + (sess.id || '').slice(0, 4);
+}
+function makeLabelSprite(text, color) {
+  const canvas = document.createElement('canvas');
+  const fontPx = 28; canvas.width = 512; canvas.height = 80;
+  const ctx = canvas.getContext('2d');
+  ctx.font = `500 ${fontPx}px 'JetBrains Mono', Consolas, monospace`;
+  ctx.fillStyle = color; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.shadowColor = color; ctx.shadowBlur = 14;
+  ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+  const tex = new THREE.CanvasTexture(canvas); tex.needsUpdate = true;
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false });
+  const sp = new THREE.Sprite(mat); sp.scale.set(20, 3.2, 1);
+  return sp;
+}
+let HOT_EDGES = new Map(); // map "from|to" -> {until_ts, weight}
+let LAST_HOT_TS = new Map(); // map "from|to" -> ts (last time this edge was hot, for stale-red display)
+const STALE_WINDOW = 600; // edge is "recently active" if hot in last 10 minutes
+let MODE = 'activity';     // 'topology' | 'activity' | 'traffic' — UI display mode (default: empty until session activity)
+const DIM_OPACITY = 0.08;
+
+// ---------- Three.js sprite-based glowing node ----------
+const spriteCache = {};
+function glowSprite(color) {
+  if (spriteCache[color]) return spriteCache[color];
+  const size = 128;
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const ctx = c.getContext('2d');
+  const g = ctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
+  g.addColorStop(0.0, color);
+  g.addColorStop(0.15, color);
+  g.addColorStop(0.45, color + '99');
+  g.addColorStop(1.0, color + '00');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, size, size);
+  const tex = new THREE.CanvasTexture(c);
+  const mat = new THREE.SpriteMaterial({ map: tex, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true });
+  spriteCache[color] = mat;
+  return mat;
+}
+
+function buildLegend(byType) {
+  const root = document.getElementById('legend');
+  root.innerHTML = '';
+  Object.keys(TYPE_COLOR).forEach(t => {
+    const count = byType[t] || 0;
+    if (count === 0) return;
+    const row = document.createElement('div');
+    row.innerHTML = `<span class="dot" style="background:${TYPE_COLOR[t]};color:${TYPE_COLOR[t]}"></span><span>${t}</span><span class="count">${count}</span>`;
+    row.onclick = () => {
+      if (activeTypes.has(t)) activeTypes.delete(t); else activeTypes.add(t);
+      row.classList.toggle('muted');
+      renderGraph();
+    };
+    root.appendChild(row);
+  });
+}
+
+// ---- Position persistence (localStorage) ----
+const LAYOUT_KEY = 'neural_graph_layout_v1';
+function loadSavedLayout() {
+  try { return JSON.parse(localStorage.getItem(LAYOUT_KEY)) || {}; }
+  catch (e) { return {}; }
+}
+function saveLayout(map) {
+  try { localStorage.setItem(LAYOUT_KEY, JSON.stringify(map)); } catch (e) {}
+}
+let SAVED_LAYOUT = loadSavedLayout();
+
+function applySavedPositions(nodes) {
+  nodes.forEach(n => {
+    const s = SAVED_LAYOUT[n.id];
+    if (!s) return;
+    if (s.pinned) { n.fx = s.x; n.fy = s.y; n.fz = s.z; }
+    else { n.x = s.x; n.y = s.y; n.z = s.z; }
+  });
+}
+function snapshotAllPositions() {
+  if (!Graph) return;
+  const data = Graph.graphData();
+  const map = { ...SAVED_LAYOUT };
+  data.nodes.forEach(n => {
+    if (n.x === undefined) return;
+    const prev = map[n.id] || {};
+    map[n.id] = {
+      x: n.x, y: n.y, z: n.z,
+      pinned: prev.pinned || (n.fx !== undefined && n.fx !== null),
+    };
+  });
+  SAVED_LAYOUT = map;
+  saveLayout(map);
+}
+// periodic snapshot every 30s
+setInterval(snapshotAllPositions, 30000);
+// snapshot on close
+window.addEventListener('beforeunload', snapshotAllPositions);
+
+function renderGraph() {
+  if (!GRAPH) return;
+  const nodes = GRAPH.nodes.filter(n => activeTypes.has(n.type));
+  applySavedPositions(nodes);
+  const ids = new Set(nodes.map(n => n.id));
+  const links = GRAPH.edges
+    .filter(e => ids.has(e.from) && ids.has(e.to))
+    .map(e => ({ source: e.from, target: e.to, weight: e.weight || 1, reason: e.reason || '' }));
+  Graph.graphData({ nodes, links });
+}
+
+function formatBytes(b) {
+  if (!b) return '';
+  if (b < 1024) return b + ' B';
+  if (b < 1024*1024) return (b/1024).toFixed(1) + ' KB';
+  return (b/1024/1024).toFixed(1) + ' MB';
+}
+function formatDate(ts) {
+  if (!ts) return '';
+  return new Date(ts*1000).toLocaleString();
+}
+
+function showInfo(node) {
+  const el = document.getElementById('info');
+  const neigh = GRAPH.edges.filter(e => e.from === node.id || e.to === node.id);
+  const neighIds = neigh.map(e => e.from === node.id ? e.to : e.from);
+  const neighNodes = neighIds.map(id => GRAPH.nodes.find(n => n.id === id)).filter(Boolean);
+
+  let html = '';
+  html += `<div class="meta-row"><span class="type-badge">${node.type}</span>`;
+  if (node.mtime) html += `<span>modified: ${formatDate(node.mtime)}</span>`;
+  if (node.size) html += `<span>${formatBytes(node.size)}</span>`;
+  html += `</div>`;
+  html += `<h2>${escapeHtml(node.label)}</h2>`;
+  if (node.description) html += `<div class="desc">${escapeHtml(node.description)}</div>`;
+
+  if (node.file || node.path) {
+    html += `<div class="section"><div class="section-title">source</div><div class="kv">`;
+    if (node.file) html += `<div><b>file:</b> ${escapeHtml(node.file)}</div>`;
+    if (node.path && node.path !== node.file) html += `<div><b>path:</b> <a href="file:///${node.path.replace(/\\/g,'/')}">${escapeHtml(node.path)}</a></div>`;
+    html += `</div></div>`;
+  }
+
+  if (node.dates && node.dates.length) {
+    html += `<div class="section"><div class="section-title">dates mentioned</div>`;
+    node.dates.forEach(d => { html += `<span class="pill warn">${escapeHtml(d)}</span>`; });
+    html += `</div>`;
+  }
+
+  if (node.paths && node.paths.length) {
+    html += `<div class="section"><div class="section-title">paths in memory</div><div class="kv">`;
+    node.paths.forEach(p => {
+      const fileUrl = 'file:///' + p.replace(/\\/g, '/');
+      html += `<div><a href="${fileUrl}" title="open in explorer">${escapeHtml(p)}</a></div>`;
+    });
+    html += `</div></div>`;
+  }
+
+  if (node.urls && node.urls.length) {
+    html += `<div class="section"><div class="section-title">urls</div><div class="kv">`;
+    node.urls.forEach(u => { html += `<div><a href="${u}" target="_blank">${escapeHtml(u)}</a></div>`; });
+    html += `</div></div>`;
+  }
+
+  if (node.preview) {
+    html += `<div class="section"><div class="section-title">preview</div><div class="preview">${escapeHtml(node.preview)}</div></div>`;
+  }
+
+  if (neighNodes.length) {
+    html += `<div class="section"><div class="section-title">connections (${neighNodes.length})</div><div class="conn-list">`;
+    neighNodes.slice(0, 30).forEach(n => {
+      html += `<span class="pill conn" data-id="${escapeHtml(n.id)}" style="border-color:${TYPE_COLOR[n.type]}55;color:${TYPE_COLOR[n.type]}">${escapeHtml(n.label)}</span>`;
+    });
+    html += `</div></div>`;
+  }
+
+  el.innerHTML = html;
+  el.style.display = 'block';
+
+  // hook clicks on connection pills
+  el.querySelectorAll('.conn').forEach(p => {
+    p.onclick = () => {
+      const n = GRAPH.nodes.find(x => x.id === p.dataset.id);
+      if (n) { showInfo(n); focusCamera(n); }
+    };
+  });
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function focusCamera(node) {
+  if (node.x === undefined) return;
+  const dist = 250;  // farther so node not overlapped by popup
+  const r = 1 + dist / (Math.hypot(node.x, node.y, node.z) || 1);
+  Graph.cameraPosition({ x: node.x * r, y: node.y * r, z: node.z * r }, node, 700);
+}
+
+// Position info panel near node's screen coords (no camera move).
+function positionInfoAtNode(node) {
+  const info = document.getElementById('info');
+  if (!info || node.x === undefined) return;
+  const screen = Graph.graph2ScreenCoords(node.x, node.y, node.z);
+  info.classList.remove('docked');
+  // anchor: prefer right of node; flip if too close to right edge
+  const W = window.innerWidth, H = window.innerHeight;
+  const popW = 320, popH = Math.min(info.scrollHeight || 200, H * 0.5);
+  let x = screen.x + 28;
+  let y = screen.y - 20;
+  if (x + popW > W - 12) x = screen.x - popW - 28;
+  if (x < 12) x = 12;
+  if (y + popH > H - 12) y = H - popH - 12;
+  if (y < 12) y = 12;
+  info.style.left = x + 'px';
+  info.style.top = y + 'px';
+  info.style.right = 'auto';
+  info.style.bottom = 'auto';
+}
+
+// Re-position popup each frame while visible (so it follows during orbit/zoom).
+let __pinnedNode = null;
+(function pinLoop() {
+  if (__pinnedNode) {
+    const info = document.getElementById('info');
+    if (info && info.style.display !== 'none' && !info.classList.contains('docked')) {
+      positionInfoAtNode(__pinnedNode);
+    }
+  }
+  requestAnimationFrame(pinLoop);
+})();
+
+const elGraph = document.getElementById('graph');
+const Graph = ForceGraph3D({ controlType: 'orbit' })(elGraph)
+  .backgroundColor('rgba(0,0,0,0)')
+  .nodeLabel(n => `<div style="background:#0e1224;color:#d8dee9;padding:6px 10px;border:1px solid #1a2138;border-radius:4px;font-size:11px;letter-spacing:.3px"><b>${escapeHtml(n.label)}</b> <span style="color:#6b7382">${n.type}</span></div>`)
+  .nodeThreeObject(n => {
+    const grp = new THREE.Group();
+    let color = TYPE_COLOR[n.type] || '#888';
+    if (n.type === 'decision' && n.outcome && DECISION_OUTCOME_COLOR[n.outcome]) {
+      color = DECISION_OUTCOME_COLOR[n.outcome];
+    }
+    const size = TYPE_SIZE[n.type] || 1.2;
+
+    // tiny solid core
+    const coreGeo = new THREE.SphereGeometry(size * 0.55, 12, 12);
+    const coreMat = new THREE.MeshBasicMaterial({ color });
+    grp.add(new THREE.Mesh(coreGeo, coreMat));
+
+    // soft glow halo (sprite)
+    const sprite = new THREE.Sprite(glowSprite(color));
+    sprite.scale.set(size * 6, size * 6, 1);
+    grp.add(sprite);
+
+    n.__pulsePhase = Math.random() * Math.PI * 2;
+    n.__baseSize = size;
+    n.__coreMat = coreMat;
+    n.__glowSprite = sprite;
+    n.__baseColor = color;
+    if (n.type === 'infra') applyInfraStatusToNode(n);
+    return grp;
+  })
+  .nodeThreeObjectExtend(false)
+  .linkColor(l => {
+    // colour link by target node type to reinforce cluster identity
+    const targetId = typeof l.target === 'object' ? l.target.id : l.target;
+    const t = GRAPH?.nodes.find(n => n.id === targetId);
+    const c = TYPE_COLOR[t?.type] || '#88c0d0';
+    return c + '40'; // alpha
+  })
+  .linkWidth(l => Math.min(1.2, 0.25 + (l.weight || 1) * 0.12))
+  .linkCurvature(0.3)
+  .linkOpacity(0.4)
+  .linkDirectionalParticles(0)
+  .linkDirectionalParticleSpeed(0.005)
+  .linkDirectionalParticleWidth(1.6)
+  .linkDirectionalParticleColor(l => {
+    const targetId = typeof l.target === 'object' ? l.target.id : l.target;
+    const t = GRAPH?.nodes.find(n => n.id === targetId);
+    return TYPE_COLOR[t?.type] || '#88c0d0';
+  })
+  .d3VelocityDecay(0.28)
+  .nodeVisibility(n => {
+    // hide static 'core' unless in TOPOLOGY mode (per-session cores replace it)
+    if (n.id === 'core' && MODE !== 'topology') return false;
+    return true;
+  })
+  .onNodeClick(node => {
+    showInfo(node);
+    __pinnedNode = node;
+    // pop near the node, no camera move
+    setTimeout(() => positionInfoAtNode(node), 0);
+  })
+  .onBackgroundClick(() => {
+    document.getElementById('info').style.display = 'none';
+    __pinnedNode = null;
+  })
+  .onNodeRightClick(node => { focusCamera(node); })  // right-click = zoom in
+  .onNodeDragEnd(node => {
+    // pin where dragged + persist
+    node.fx = node.x; node.fy = node.y; node.fz = node.z;
+    SAVED_LAYOUT[node.id] = { x: node.x, y: node.y, z: node.z, pinned: true };
+    saveLayout(SAVED_LAYOUT);
+  })
+  .onNodeHover(node => { trafficHover(node); })
+  .onBackgroundRightClick(() => {
+    // right-click background = reset camera
+    Graph.cameraPosition({ x: 0, y: 0, z: 1500 }, { x: 0, y: 0, z: 0 }, 700);
+  });
+
+// d3 force tweaks: repulsion lighter (anchors do heavy lifting), shorter links
+Graph.d3Force('charge').strength(-140).distanceMax(700);
+Graph.d3Force('link').distance(l => {
+  const sId = typeof l.source === 'object' ? l.source.id : l.source;
+  const tId = typeof l.target === 'object' ? l.target.id : l.target;
+  if (sId === 'core' || tId === 'core') return 260;
+  return 70;
+}).strength(0.15); // lower so anchors dominate the layout
+
+// 4-shell layout:
+//   shell 0 : core              R=0       center
+//   shell 1 : user / feedback   R=140     inner ring (xy plane-ish)
+//   shell 2 : projects          R=420     mid sphere (fibonacci)
+//   shell 3 : project memories  +80 off   small cluster around each project
+//   shell 4 : skills / mcps     R=720     outer ring, split by type into hemispheres
+//
+// Each node gets:
+//   __anchor      : target world position (vec3)
+//   __anchorK     : pull strength (per node)
+//   __anchorMode  : 'fixed' (pin) or 'soft'
+
+function fibPoint(i, n, R) {
+  const phi = Math.acos(1 - 2 * (i + 0.5) / n);
+  const theta = Math.PI * (1 + Math.sqrt(5)) * i;
+  return {
+    x: R * Math.sin(phi) * Math.cos(theta),
+    y: R * Math.sin(phi) * Math.sin(theta),
+    z: R * Math.cos(phi),
+  };
+}
+
+function applyClusterAnchors() {
+  if (!GRAPH) return;
+
+  // owner map: each non-project node -> its primary project (first edge to a project)
+  const projects = GRAPH.nodes.filter(n => n.type === 'project');
+  const projIds = new Set(projects.map(p => p.id));
+  const owner = new Map();
+  GRAPH.edges.forEach(e => {
+    if (projIds.has(e.from) && !projIds.has(e.to)) {
+      if (!owner.has(e.to)) owner.set(e.to, e.from);
+    } else if (projIds.has(e.to) && !projIds.has(e.from)) {
+      if (!owner.has(e.from)) owner.set(e.from, e.to);
+    }
+  });
+
+  // shell 2: projects on fibonacci sphere
+  projects.forEach((p, i) => {
+    p.__anchor = fibPoint(i, projects.length, 420);
+    p.__anchorK = 0.18;
+  });
+
+  // groupings
+  const skills = GRAPH.nodes.filter(n => n.type === 'skill');
+  const mcps = GRAPH.nodes.filter(n => n.type === 'mcp');
+  const feedbacks = GRAPH.nodes.filter(n => n.type === 'feedback');
+  const users = GRAPH.nodes.filter(n => n.type === 'user');
+  const refs = GRAPH.nodes.filter(n => n.type === 'reference');
+  const memories = GRAPH.nodes.filter(n => n.type === 'memory');
+
+  // shell 1: feedback (lower hemisphere y-) + user (upper y+) + reference (mid)
+  feedbacks.forEach((n, i) => {
+    const a = (i / Math.max(1, feedbacks.length)) * Math.PI * 2;
+    n.__anchor = { x: 140 * Math.cos(a), y: -90, z: 140 * Math.sin(a) };
+    n.__anchorK = 0.14;
+  });
+  users.forEach((n, i) => {
+    const a = (i / Math.max(1, users.length)) * Math.PI * 2;
+    n.__anchor = { x: 130 * Math.cos(a), y: 110, z: 130 * Math.sin(a) };
+    n.__anchorK = 0.14;
+  });
+  refs.forEach((n, i) => {
+    const a = (i / Math.max(1, refs.length)) * Math.PI * 2;
+    n.__anchor = { x: 160 * Math.cos(a), y: 0, z: 160 * Math.sin(a) };
+    n.__anchorK = 0.14;
+  });
+
+  // shell 3: memory nodes — cluster around their owner project with small offset
+  memories.forEach((n, i) => {
+    const ownerPid = owner.get(n.id);
+    const own = ownerPid ? projects.find(p => p.id === ownerPid) : null;
+    if (own && own.__anchor) {
+      // small spherical offset around project anchor (deterministic per node id)
+      const h = [...n.id].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 0);
+      const ang1 = (h % 1000) / 1000 * Math.PI * 2;
+      const ang2 = ((h >> 10) % 1000) / 1000 * Math.PI;
+      const r = 60 + ((h >> 5) % 30);
+      n.__anchor = {
+        x: own.__anchor.x + r * Math.sin(ang2) * Math.cos(ang1),
+        y: own.__anchor.y + r * Math.sin(ang2) * Math.sin(ang1),
+        z: own.__anchor.z + r * Math.cos(ang2),
+      };
+      n.__anchorK = 0.22; // strong — keep clumped near project
+    } else {
+      // orphan memory → near core
+      n.__anchor = { x: 0, y: 0, z: 0 };
+      n.__anchorK = 0.05;
+    }
+  });
+
+  // shell 4: skills on upper outer ring, mcps on lower outer ring
+  skills.forEach((n, i) => {
+    const a = (i / Math.max(1, skills.length)) * Math.PI * 2;
+    const R = 720;
+    n.__anchor = { x: R * Math.cos(a), y: 220 + Math.sin(a * 3) * 30, z: R * Math.sin(a) };
+    n.__anchorK = 0.12;
+  });
+  mcps.forEach((n, i) => {
+    const a = (i / Math.max(1, mcps.length)) * Math.PI * 2;
+    const R = 700;
+    n.__anchor = { x: R * Math.cos(a), y: -220 + Math.sin(a * 3) * 30, z: R * Math.sin(a) };
+    n.__anchorK = 0.14;
+  });
+
+  // shell 2b: learned_skills (Voyager-pattern saved procedures) — close ring around core,
+  // gold-glow tier on z- side opposite infra
+  const learned = GRAPH.nodes.filter(n => n.type === 'learned_skill');
+  learned.forEach((n, i) => {
+    const a = (i / Math.max(1, learned.length)) * Math.PI * 2;
+    const R = 280;
+    n.__anchor = { x: R * Math.cos(a) * 0.7, y: Math.sin(a * 2) * 60, z: -350 + R * Math.sin(a) * 0.5 };
+    n.__anchorK = 0.16;
+  });
+
+  // shell 4b: infra (servers/hosts) — own ring on z+ side (front-facing), x-axis spread
+  const infras = GRAPH.nodes.filter(n => n.type === 'infra');
+  infras.forEach((n, i) => {
+    const a = (i / Math.max(1, infras.length)) * Math.PI * 2;
+    const R = 600;
+    // place on a tilted ring (z+ dominant) so they cluster visibly to one side
+    n.__anchor = { x: R * Math.cos(a) * 0.6, y: Math.sin(a * 2) * 80, z: 500 + R * Math.sin(a) * 0.5 };
+    n.__anchorK = 0.13;
+  });
+
+  // core pinned at origin
+  GRAPH.nodes.forEach(n => {
+    if (n.type === 'core') {
+      n.__anchor = { x: 0, y: 0, z: 0 };
+      n.__anchorK = 0.5;
+      n.fx = 0; n.fy = 0; n.fz = 0; // fully pin
+    }
+  });
+}
+
+// custom force: pull each node toward its anchor (per-node strength)
+function anchorForce(alpha) {
+  if (!GRAPH) return;
+  GRAPH.nodes.forEach(n => {
+    if (!n.__anchor || n.x === undefined) return;
+    const k = (n.__anchorK || 0.08) * alpha;
+    n.vx += (n.__anchor.x - n.x) * k;
+    n.vy += (n.__anchor.y - n.y) * k;
+    n.vz += (n.__anchor.z - n.z) * k;
+  });
+}
+Graph.d3Force('anchor', anchorForce);
+
+// Custom OrbitControls bindings: LMB pan, RMB rotate, MMB pan, wheel zoom
+const controls = Graph.controls();
+if (controls && THREE && THREE.MOUSE) {
+  controls.mouseButtons = {
+    LEFT:   THREE.MOUSE.PAN,
+    MIDDLE: THREE.MOUSE.DOLLY, // middle press alone = zoom toward cursor; if middle-drag pan needed, swap to PAN
+    RIGHT:  THREE.MOUSE.ROTATE,
+  };
+  // Some THREE builds: middle drag = PAN. Prefer PAN per user spec:
+  controls.mouseButtons.MIDDLE = THREE.MOUSE.PAN;
+  controls.enableZoom = true;
+  controls.zoomSpeed = 1.0;
+  controls.panSpeed = 1.0;
+  controls.rotateSpeed = 0.9;
+  controls.screenSpacePanning = true; // pan in screen-space, intuitive
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.12;
+}
+
+// starfield background
+const scene = Graph.scene();
+{
+  const geo = new THREE.BufferGeometry();
+  const positions = [];
+  const colors = [];
+  for (let i = 0; i < 1200; i++) {
+    positions.push((Math.random()-0.5)*5000, (Math.random()-0.5)*5000, (Math.random()-0.5)*5000);
+    const c = 0.4 + Math.random()*0.6;
+    colors.push(c, c, c);
+  }
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  const mat = new THREE.PointsMaterial({ size: 1.4, sizeAttenuation: true, vertexColors: true, opacity: 0.7, transparent: true });
+  scene.add(new THREE.Points(geo, mat));
+}
+
+// pulsation loop — capped at ~20 fps, paused when tab unfocused, skipped when window hidden
+let tabActive = !document.hidden;
+let windowFocused = document.hasFocus();
+document.addEventListener('visibilitychange', () => { tabActive = !document.hidden; });
+window.addEventListener('focus',  () => { windowFocused = true; });
+window.addEventListener('blur',   () => { windowFocused = false; });
+
+const PULSE_INTERVAL = 50; // ms (~20fps)
+let lastPulse = 0;
+function animatePulse(now) {
+  requestAnimationFrame(animatePulse);
+  if (!tabActive || !windowFocused) return; // pause when not looking
+  if (now - lastPulse < PULSE_INTERVAL) return;
+  lastPulse = now;
+  if (!GRAPH) return;
+  const t = now * 0.001;
+  GRAPH.nodes.forEach(n => {
+    if (n.__threeObj && n.__pulsePhase !== undefined) {
+      const s = 1 + Math.sin(t * 1.2 + n.__pulsePhase) * 0.07;
+      const sprite = n.__threeObj.children[1];
+      if (sprite) {
+        const base = n.__baseSize * 6;
+        sprite.scale.set(base * s, base * s, 1);
+      }
+      // conflict flash: pulse coreMat between base color and yellow
+      if (CONFLICT_NODES.has(n.id) && n.__coreMat && n.__baseColor) {
+        const mix = (Math.sin(t * 4) + 1) / 2; // 0..1
+        const base = new THREE.Color(n.__baseColor);
+        const warn = new THREE.Color('#ffd84d');
+        const lerped = base.clone().lerp(warn, mix);
+        n.__coreMat.color = lerped;
+      } else if (n.__lastWasConflict && n.__coreMat && n.__baseColor) {
+        // restore on exit
+        n.__coreMat.color = new THREE.Color(n.__baseColor);
+        n.__lastWasConflict = false;
+      }
+      if (CONFLICT_NODES.has(n.id)) n.__lastWasConflict = true;
+    }
+  });
+}
+requestAnimationFrame(animatePulse);
+
+// freeze simulation when settled to save GPU (3d-force-graph keeps running by default)
+let cooldownTimer = null;
+function scheduleCooldown() {
+  clearTimeout(cooldownTimer);
+  cooldownTimer = setTimeout(() => {
+    Graph.cooldownTicks(0); // stop simulation
+  }, 8000);
+}
+
+function bootstrap(data) {
+  const isUpdate = GRAPH !== null;
+  const oldPos = isUpdate ? new Map(GRAPH.nodes.map(n => [n.id, {x: n.x, y: n.y, z: n.z, vx: n.vx, vy: n.vy, vz: n.vz}])) : null;
+  GRAPH = data;
+  applyClusterAnchors();
+  // preserve positions on hot-reload to avoid jarring layout reset
+  if (oldPos) {
+    data.nodes.forEach(n => {
+      const p = oldPos.get(n.id);
+      if (p) Object.assign(n, p);
+    });
+    showToast('graph updated · ' + data.stats.nodes + ' nodes');
+  }
+  document.getElementById('gen-time').innerText = new Date(data.generated_at).toLocaleString();
+  document.getElementById('stats-text').innerText = `${data.stats.nodes} nodes · ${data.stats.edges} edges`;
+  buildLegend(data.stats.by_type);
+  renderGraph();
+  lastBuildTime = data.generated_at;
+  scheduleCooldown();
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.innerText = msg;
+  t.style.display = 'block';
+  clearTimeout(t.__hideTimer);
+  t.__hideTimer = setTimeout(() => { t.style.display = 'none'; }, 2400);
+}
+
+// initial load
+if (window.electronAPI) {
+  // ELECTRON MODE — IPC pushes data, no polling
+  window.electronAPI.onGraph(data => bootstrap(data));
+  window.electronAPI.onSessions(data => { if (data && data.sessions) { SESSIONS = data.sessions; renderSessions(); } });
+  window.electronAPI.onTranscripts(list => handleTranscripts(list));
+  if (window.electronAPI.onInfra) window.electronAPI.onInfra(data => handleInfra(data));
+  if (window.electronAPI.onHealth) window.electronAPI.onHealth(data => handleHealth(data));
+  if (window.electronAPI.onGrowth) window.electronAPI.onGrowth(data => handleGrowth(data));
+  if (window.electronAPI.onSignals) window.electronAPI.onSignals(data => handleSignals(data));
+  if (window.electronAPI.onAnomalies) window.electronAPI.onAnomalies(data => handleAnomalies(data));
+  if (window.electronAPI.onProcesses) window.electronAPI.onProcesses(data => handleProcesses(data));
+  if (window.electronAPI.onTraffic) window.electronAPI.onTraffic(data => handleTraffic(data));
+  window.electronAPI.requestInitial();
+  document.getElementById('gen-time').innerText = 'electron mode · live';
+} else if (window.GRAPH_DATA) {
+  bootstrap(window.GRAPH_DATA);
+} else {
+  fetch('../graph.json').then(r => r.json()).then(bootstrap).catch(e => {
+    document.getElementById('gen-time').innerText = 'load failed: ' + e.message;
+  });
+}
+
+// Transcripts state (Electron-only) — ALL detected CC sessions, including ones without hooks
+let TRANSCRIPTS = [];
+let PROJECT_TOTALS = {};
+let TOOL_STATS = [];
+let DAILY_TOTALS = { tok_in: 0, tok_out: 0, cache_create: 0, cache_read: 0, cost_usd: 0 };
+let CONFLICTS = []; // [{file, sessions:[sid,...]}]
+function handleTranscripts(payload) {
+  // back-compat: array OR {sessions, project_totals, tool_stats, daily, conflicts}
+  if (Array.isArray(payload)) {
+    TRANSCRIPTS = payload;
+  } else if (payload && typeof payload === 'object') {
+    TRANSCRIPTS = payload.sessions || [];
+    PROJECT_TOTALS = payload.project_totals || {};
+    TOOL_STATS = payload.tool_stats || [];
+    DAILY_TOTALS = payload.daily || DAILY_TOTALS;
+    CONFLICTS = payload.conflicts || [];
+  } else {
+    TRANSCRIPTS = [];
+  }
+  applyConflictPulse();
+  renderTranscripts();
+  renderMetrics();
+  // also fold transcript activity into HOT edges so cross-session shows fully
+  const now = Date.now() / 1000;
+  TRANSCRIPTS.forEach(t => {
+    if (!t.active) return;
+    // Only fire on REAL fresh activity: token delta > 0 AND last_event_at < 30s
+    if (!window.__tokenPrev) window.__tokenPrev = {};
+    const prev = window.__tokenPrev[t.id];
+    const total = (t.tok_in || 0) + (t.tok_out || 0) + (t.cache_create || 0) + (t.cache_read || 0);
+    const delta = prev === undefined ? 0 : Math.max(0, total - prev);
+    window.__tokenPrev[t.id] = total;
+    const lastAge = now - (t.last_event_at || 0);
+    if (delta <= 0 || lastAge > 30) return;  // no new tokens OR stale → don't light up
+    const focusIds = new Set();
+    if (t.project_id) focusIds.add(t.project_id);
+    // weight scales with kilobytes-of-tokens; cap at 50
+    const wDelta = Math.min(50, Math.round(delta / 500));
+    const myCore = coreSessId(t.id);
+    const ids = [...focusIds];
+    ids.forEach(id => {
+      const exA = HOT_EDGES.get(myCore + '|' + id);
+      const wA = Math.min(50, ((exA && exA.weight) || 0) + wDelta + 1);
+      HOT_EDGES.set(myCore + '|' + id, { until_ts: now + 20, weight: wA });
+      HOT_EDGES.set(id + '|' + myCore, { until_ts: now + 20, weight: wA });
+    });
+    if (GRAPH) {
+      GRAPH.edges.forEach(e => {
+        if (focusIds.has(e.from) || focusIds.has(e.to)) {
+          HOT_EDGES.set(e.from + '|' + e.to, { until_ts: now + 12 });
+          HOT_EDGES.set(e.to + '|' + e.from, { until_ts: now + 12 });
+        }
+      });
+    }
+  });
+}
+
+function renderTranscripts() {
+  const panel = document.getElementById('transcripts');
+  if (!panel) return;
+  const list = TRANSCRIPTS;
+  if (!list.length) { panel.style.display = 'none'; return; }
+  panel.style.display = 'block';
+  const now = Date.now() / 1000;
+  const parents = list.filter(s => !s.parent_sid);
+  const childrenByParent = {};
+  list.filter(s => s.parent_sid).forEach(s => {
+    (childrenByParent[s.parent_sid] = childrenByParent[s.parent_sid] || []).push(s);
+  });
+  let html = '<h3>ALL CC SESSIONS (' + parents.length + ' + ' + (list.length - parents.length) + ' agents)</h3>';
+  parents.slice(0, 12).forEach(s => {
+    const age = Math.floor(now - s.last_event_at);
+    const cwdShort = (s.cwd || '').split(/[\\/]/).slice(-2).join('/');
+    const cls = s.active ? 'dot-live' : 'dot-idle';
+    const tokStr = (s.tok_in || s.tok_out) ? `<span style="color:#7be0a8">${fmtTok(s.tok_in)}in/${fmtTok(s.tok_out)}out · $${(s.cost_usd||0).toFixed(2)}</span>` : '';
+    const sc = sessionColor(s.id);
+    html += `<div class="sess" style="border-left:3px solid ${sc}; padding-left:6px; margin-bottom:6px;">
+      <div class="row"><span class="id"><span class="dot-live ${cls}" style="background:${sc}"></span><span style="color:${sc}">${s.id.substring(0,8)}</span></span><span style="color:var(--dim)">${age}s · ${s.msg_count} msgs</span></div>
+      <div class="meta">${escapeHtml(s.project_id || '—')} · ${escapeHtml(cwdShort)}</div>
+      ${tokStr ? `<div class="meta">${tokStr}</div>` : ''}
+      ${s.last_tool ? `<div class="cur">▸ ${escapeHtml(s.last_tool)}${s.last_tool_target ? ' · ' + escapeHtml((s.last_tool_target||'').slice(-50)) : ''}</div>` : ''}
+      ${s.last_user_prompt ? `<div class="meta" style="color:#88c0d0">"${escapeHtml(s.last_user_prompt.slice(0, 80))}"</div>` : ''}`;
+    const kids = childrenByParent[s.id] || [];
+    kids.forEach(k => {
+      const kage = Math.floor(now - k.last_event_at);
+      const kcost = (k.cost_usd || 0).toFixed(3);
+      html += `<div style="margin:4px 0 0 12px; padding-left:8px; border-left:1px solid #444;">
+        <div class="row"><span style="color:#c8a8ff">↳ ${escapeHtml(k.agent_name || 'agent')}</span><span style="color:var(--dim)">${kage}s · $${kcost}</span></div>
+        ${k.last_tool ? `<div class="cur" style="font-size:10px">${escapeHtml(k.last_tool)}</div>` : ''}
+      </div>`;
+    });
+    html += `</div>`;
+  });
+  panel.innerHTML = html;
+}
+
+function sessionColor(sid) {
+  if (!sid) return '#88c0d0';
+  let h = 0;
+  for (let i = 0; i < sid.length; i++) h = (h * 31 + sid.charCodeAt(i)) | 0;
+  const hue = Math.abs(h) % 360;
+  return `hsl(${hue}, 70%, 62%)`;
+}
+
+function fmtTok(n) {
+  if (!n) return '0';
+  if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + 'k';
+  return String(n);
+}
+
+// Conflict pulse: nodeIds set, flashed yellow in animatePulse
+const CONFLICT_NODES = new Set();
+function applyConflictPulse() {
+  CONFLICT_NODES.clear();
+  if (!CONFLICTS.length || !GRAPH) return;
+  CONFLICTS.forEach(c => {
+    const f = (c.file || '').toLowerCase();
+    // try infer project node id from path
+    // Map cwd substrings (lowercase) to project node ids. Add yours below.
+    const projMap = [
+      // ['myapp', 'proj_myapp'],
+    ];
+    for (const [tag, pid] of projMap) {
+      if (f.includes(tag)) { CONFLICT_NODES.add(pid); break; }
+    }
+    // also match any memory node whose filename appears in path
+    GRAPH.nodes.forEach(n => {
+      if (n.type === 'memory' && n.label && f.includes(n.label.toLowerCase().replace('.md', ''))) {
+        CONFLICT_NODES.add(n.id);
+      }
+    });
+  });
+}
+
+// Project health: pid -> {name, paths, urls, overall}
+let HEALTH = {};
+const HEALTH_COLORS = { ok: '#7be0a8', warn: '#e8d76a', err: '#ff5555' };
+// Anomalies (Phase 5b)
+let ANOMALIES = { items: [] };
+const ANOM_KIND_COLOR = {
+  cost_spike: '#ff5f6f',
+  msg_spike: '#ff9c42',
+  tool_spike: '#ffc857',
+  new_tool: '#5ef0a8',
+  new_mcp: '#9affc8',
+};
+function handleAnomalies(data) {
+  if (!data) return;
+  ANOMALIES = data;
+  // pulse glow on related project nodes for new anomalies
+  if (GRAPH && data.items) {
+    const recent = data.items.slice(-10);
+    const projSet = new Set(recent.map(a => a.project_id).filter(Boolean));
+    GRAPH.nodes.forEach(n => {
+      if (projSet.has(n.id)) {
+        n.__anomalyGlow = Date.now() + 30000;  // 30s pulse
+      }
+    });
+  }
+  if (typeof renderMetrics === 'function') renderMetrics();
+}
+
+// External CLI agents (Phase 6c) — non-Claude processes (cursor/aider/codex/ollama/etc.)
+let PROCESSES = { ts: 0, agents: [], counts_by_kind: {} };
+let EXT_AGENT_NODES = {};   // {pid: THREE.Group}
+let EXT_INFRA_NODES = {};   // {host: THREE.Group} — auto-minted infra ghosts for novel hosts
+let WEB_NODES = {};          // {id: THREE.Group} — Step 3: WebFetch/WebSearch domain ghosts
+const AGENT_KIND_COLOR = {
+  cursor: '#4fd6ff', aider: '#b794ff', codex: '#ffd84d', continue: '#5ef0a8',
+  ollama: '#ff9c42', anthropic_sdk: '#ff6b8a', openai_sdk: '#9affc8',
+  playwright: '#ffaf5e', chrome: '#aaa', electron_app: '#888', python: '#5eff8a',
+  node: '#7be0a8', claude_code: '#fff5e6',
+};
+function handleProcesses(data) {
+  if (!data) return;
+  PROCESSES = data;
+  if (typeof renderMetrics === 'function') renderMetrics();
+  refreshExtAgentScene();
+}
+
+// External signals (Phase 4b)
+let SIGNALS = { items: [], summary: {}, updated_at: 0 };
+// Map signal source tag (matches SITEMAPS/KEYWORDS in signals.py) -> project node id.
+// Example: { myapp: 'proj_myapp' }
+const SIGNAL_TAG_TO_PROJECT = {
+};
+const SIGNAL_SRC_COLOR = { hn: '#ff9c42', reddit: '#ff5700', sitemap: '#5ef0a8', gh: '#b794ff' };
+function handleSignals(data) {
+  if (!data) return;
+  SIGNALS = data;
+  // brief glow on related project nodes for items <24h old
+  if (GRAPH) {
+    const cutoff = Math.floor(Date.now() / 1000) - 86400;
+    const recentTags = new Set();
+    (data.items || []).forEach(i => {
+      if ((i.ts || 0) >= cutoff) recentTags.add(i.tag);
+    });
+    recentTags.forEach(tag => {
+      const pid = SIGNAL_TAG_TO_PROJECT[tag];
+      if (!pid) return;
+      const n = GRAPH.nodes.find(x => x.id === pid);
+      if (n && n.__glowSprite && n.__glowSprite.material) {
+        n.__signalGlow = Date.now();
+      }
+    });
+  }
+  renderMetrics();
+}
+
+// Growth timeline (Phase 11)
+let GROWTH = null;
+const GROWTH_COLORS = { memory: '#7be0a8', skill: '#9ad', cost: '#e8a45a', sessions: '#b794ff' };
+function renderGrowthChart() {
+  const svg = document.getElementById('growth-chart');
+  if (!svg || !GROWTH || !GROWTH.weeks || GROWTH.weeks.length === 0) return;
+  const w = 540, h = 64, pad = 4;
+  const weeks = GROWTH.weeks;
+  // 4 series: memories_count, skills_count, sessions, cost (normalized)
+  const series = {
+    memory: weeks.map(x => x.memories_count || 0),
+    skill: weeks.map(x => x.skills_count || 0),
+    sessions: weeks.map(x => x.sessions || 0),
+    cost: weeks.map(x => x.cost || 0),
+  };
+  function pathFor(arr, color) {
+    const max = Math.max(1, ...arr);
+    const stepX = (w - pad * 2) / Math.max(1, arr.length - 1);
+    const pts = arr.map((v, i) => {
+      const x = pad + i * stepX;
+      const y = h - pad - (v / max) * (h - pad * 2);
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    });
+    return `<polyline points="${pts.join(' ')}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linejoin="round" opacity="0.85"/>` +
+           arr.map((v, i) => {
+             const x = pad + i * stepX;
+             const y = h - pad - (v / max) * (h - pad * 2);
+             return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2" fill="${color}"><title>${weeks[i].week_start}: ${v}</title></circle>`;
+           }).join('');
+  }
+  let inner = '';
+  // axis lines
+  inner += `<line x1="${pad}" y1="${h-pad}" x2="${w-pad}" y2="${h-pad}" stroke="#222" stroke-width="0.5"/>`;
+  inner += pathFor(series.cost, GROWTH_COLORS.cost);
+  inner += pathFor(series.sessions, GROWTH_COLORS.sessions);
+  inner += pathFor(series.memory, GROWTH_COLORS.memory);
+  inner += pathFor(series.skill, GROWTH_COLORS.skill);
+  // week labels (first/last)
+  inner += `<text x="${pad}" y="${h-pad+8}" fill="#555" font-size="8">${weeks[0].week_start}</text>`;
+  inner += `<text x="${w-pad-50}" y="${h-pad+8}" fill="#555" font-size="8">${weeks[weeks.length-1].week_start}</text>`;
+  svg.innerHTML = inner;
+
+  // legend
+  const leg = document.getElementById('growth-legend');
+  leg.innerHTML = `
+    <span><span style="display:inline-block;width:8px;height:2px;background:${GROWTH_COLORS.memory};vertical-align:middle"></span> mem</span>
+    <span><span style="display:inline-block;width:8px;height:2px;background:${GROWTH_COLORS.skill};vertical-align:middle"></span> skill</span>
+    <span><span style="display:inline-block;width:8px;height:2px;background:${GROWTH_COLORS.sessions};vertical-align:middle"></span> sess</span>
+    <span><span style="display:inline-block;width:8px;height:2px;background:${GROWTH_COLORS.cost};vertical-align:middle"></span> $$$</span>
+  `;
+
+  // totals
+  const t = GROWTH.totals;
+  document.getElementById('growth-totals').innerText =
+    `${t.memories} mem · ${t.skills} skills · ${t.sessions} sess · $${t.cost.toFixed(0)} · ${t.tools} tools`;
+
+  // digest content
+  const last = weeks[weeks.length - 1];
+  const memTypes = Object.entries(last.memories_by_type || {}).map(([k,v]) => `${v} ${k}`).join(', ') || '—';
+  const fc = (last.first_contacts || []).slice(-5);
+  const top = (last.top_projects || []).slice(0, 3).map(([p,n]) => `${p}(${n})`).join(', ') || '—';
+  document.getElementById('growth-digest').innerHTML = `
+    <div style="color:#9ad; margin-bottom:4px;">WEEK ${last.week_start}</div>
+    <div>memories: ${last.memories_count} (${memTypes})</div>
+    <div>skills: ${last.skills_count}</div>
+    <div>sessions: ${last.sessions} · cost: $${(last.cost||0).toFixed(2)}</div>
+    <div>top projects: ${top}</div>
+    ${fc.length ? `<div style="color:#7be0a8">first contact: ${fc.join(', ')}</div>` : ''}
+  `;
+}
+function handleGrowth(data) {
+  GROWTH = data;
+  const panel = document.getElementById('growth');
+  if (!panel) return;
+  panel.style.display = 'block';
+  renderGrowthChart();
+}
+// click to expand digest
+document.addEventListener('DOMContentLoaded', () => {
+  const p = document.getElementById('growth');
+  if (p) {
+    p.addEventListener('click', () => {
+      const d = document.getElementById('growth-digest');
+      d.style.display = (d.style.display === 'none') ? 'block' : 'none';
+    });
+  }
+});
+
+function handleHealth(data) {
+  HEALTH = (data && data.projects) || {};
+  if (!GRAPH) return;
+  // tag project nodes
+  GRAPH.nodes.forEach(n => {
+    if (n.type === 'project' && HEALTH[n.id] && n.__coreMat) {
+      const overall = HEALTH[n.id].overall;
+      const col = HEALTH_COLORS[overall];
+      if (col) {
+        n.__healthOverlayColor = col;
+        // pulse outer halo only, keep core base color so health is glanceable but not destructive
+        if (n.__glowSprite && n.__glowSprite.material) {
+          n.__glowSprite.material.color = new THREE.Color(col);
+        }
+      }
+    }
+  });
+  renderMetrics();
+}
+
+// Infra status from probes: nodeId -> {status, latency_ms, last_check, ports}
+let INFRA_STATUS = {};
+const INFRA_COLORS = { up: '#7be0a8', partial: '#e8d76a', down: '#ff5555', unknown: '#666' };
+function applyInfraStatusToNode(n) {
+  if (!n.__coreMat) return;
+  const st = INFRA_STATUS[n.id];
+  const color = st ? (INFRA_COLORS[st.status] || INFRA_COLORS.unknown) : INFRA_COLORS.unknown;
+  n.__coreMat.color = new THREE.Color(color);
+  if (n.__glowSprite && n.__glowSprite.material && n.__glowSprite.material.color) {
+    n.__glowSprite.material.color = new THREE.Color(color);
+  }
+}
+function handleInfra(data) {
+  INFRA_STATUS = data || {};
+  if (!GRAPH) return;
+  GRAPH.nodes.forEach(n => { if (n.type === 'infra') applyInfraStatusToNode(n); });
+  renderInfraPanel();
+}
+function renderInfraPanel() {
+  // Reuse metrics panel: append infra block at top if any data
+  // Actually let's add a separate small block; cleaner: put it inside metrics panel render
+  renderMetrics();
+}
+
+// Edge stats: mcpNodeId -> {p50_ms, errors, errorRate}
+let EDGE_STATS = {};
+function mcpNodeIdFromTool(name) {
+  if (!name || !name.startsWith('mcp__')) return null;
+  const parts = name.split('__');
+  if (parts.length < 2) return null;
+  return 'mcp_' + parts[1].toLowerCase().replace(/[^a-z0-9_]/g, '_');
+}
+function rebuildEdgeStats() {
+  EDGE_STATS = {};
+  // group tool_stats by mcp node id
+  const grouped = {};
+  TOOL_STATS.forEach(t => {
+    const mid = mcpNodeIdFromTool(t.name);
+    if (!mid) return;
+    const g = grouped[mid] || { latencies: [], count: 0, errors: 0 };
+    if (t.p50_ms > 0) g.latencies.push({ ms: t.p50_ms, count: t.count });
+    g.count += t.count;
+    g.errors += t.errors;
+    grouped[mid] = g;
+  });
+  // weighted p50 by count
+  Object.entries(grouped).forEach(([mid, g]) => {
+    let totalCount = 0, weighted = 0;
+    g.latencies.forEach(l => { totalCount += l.count; weighted += l.ms * l.count; });
+    EDGE_STATS[mid] = {
+      p50_ms: totalCount ? Math.round(weighted / totalCount) : 0,
+      errors: g.errors,
+      errorRate: g.count ? g.errors / g.count : 0,
+      count: g.count,
+    };
+  });
+}
+function latencyColor(ms) {
+  if (ms < 200) return '#7be0a8';   // green
+  if (ms < 1000) return '#e8d76a';  // yellow
+  if (ms < 3000) return '#ff9c42';  // orange
+  return '#ff5555';                  // red
+}
+
+function renderMetrics() {
+  rebuildEdgeStats();
+  const panel = document.getElementById('metrics');
+  if (!panel) return;
+  const infraIds = Object.keys(INFRA_STATUS);
+  const goalCount = (GRAPH?.nodes || []).filter(n => n.type === 'goal').length;
+  const hasData = DAILY_TOTALS.cost_usd > 0 || TOOL_STATS.length > 0 || Object.keys(PROJECT_TOTALS).length > 0 || infraIds.length > 0 || Object.keys(HEALTH).length > 0 || (SIGNALS.items && SIGNALS.items.length > 0) || goalCount > 0;
+  if (!hasData) { panel.style.display = 'none'; return; }
+  panel.style.display = 'block';
+
+  // active goals (Phase 8b) — derived from graph nodes type=goal
+  const goalNodes = (GRAPH?.nodes || []).filter(n => n.type === 'goal' && n.status !== 'dropped');
+  let html = '';
+  if (goalNodes.length) {
+    const sorted = [...goalNodes].sort((a, b) => (a.priority || 5) - (b.priority || 5));
+    html += `<h3 style="color:#ffaf5e">ACTIVE GOALS</h3>`;
+    sorted.slice(0, 8).forEach(g => {
+      const stCol = g.status === 'active' ? '#5eff8a' : (g.status === 'paused' ? '#ffc857' : '#888');
+      const blockedFlag = (g.blockers && g.blockers.length) ? ` <span title="${escapeHtml(g.blockers.join(' | '))}" style="color:#ff5f6f">⚠${g.blockers.length}</span>` : '';
+      html += `<div class="row" style="font-size:10px">
+        <span><span style="color:${stCol}">●</span> P${g.priority || '?'} ${escapeHtml(g.label)}${blockedFlag}</span>
+        <span style="color:#ddd">${g.progress}%</span>
+      </div>`;
+    });
+  }
+
+  const d = DAILY_TOTALS;
+  html += `<h3>TODAY</h3>`;
+  html += `
+    <div class="row"><span style="color:var(--dim)">cost</span><span style="color:#7be0a8;font-weight:600">$${d.cost_usd.toFixed(2)}</span></div>
+    <div class="row"><span style="color:var(--dim)">tokens</span><span>${fmtTok(d.tok_in)} in · ${fmtTok(d.tok_out)} out</span></div>
+    <div class="row"><span style="color:var(--dim)">cache</span><span>${fmtTok(d.cache_create)} w · ${fmtTok(d.cache_read)} r</span></div>`;
+
+  // top projects by cost
+  const projs = Object.entries(PROJECT_TOTALS).sort((a, b) => b[1].cost - a[1].cost).slice(0, 5);
+  if (projs.length) {
+    html += `<h3 style="margin-top:8px">TOP PROJECTS</h3>`;
+    projs.forEach(([pid, p]) => {
+      html += `<div class="row"><span>${escapeHtml(pid)}</span><span style="color:#7be0a8">$${p.cost.toFixed(2)}</span></div>`;
+    });
+  }
+  // top tools
+  if (TOOL_STATS.length) {
+    html += `<h3 style="margin-top:8px">TOP TOOLS</h3>`;
+    TOOL_STATS.slice(0, 8).forEach(t => {
+      const errStr = t.error_rate > 0 ? ` <span style="color:#ff6b8a">${(t.error_rate*100).toFixed(0)}%err</span>` : '';
+      const latStr = t.p50_ms > 0 ? ` <span style="color:var(--dim)">${t.p50_ms}ms</span>` : '';
+      html += `<div class="row"><span>${escapeHtml(t.name)}${errStr}</span><span>${t.count}${latStr}</span></div>`;
+    });
+  }
+  // infra status
+  const iIds = Object.keys(INFRA_STATUS);
+  if (iIds.length) {
+    let up = 0, partial = 0, down = 0;
+    iIds.forEach(id => {
+      const s = INFRA_STATUS[id].status;
+      if (s === 'up') up++;
+      else if (s === 'partial') partial++;
+      else if (s === 'down') down++;
+    });
+    html += `<h3 style="margin-top:8px">INFRA</h3>
+      <div class="row">
+        <span><span style="color:${INFRA_COLORS.up}">●</span> ${up} up</span>
+        <span><span style="color:${INFRA_COLORS.partial}">●</span> ${partial} partial</span>
+        <span><span style="color:${INFRA_COLORS.down}">●</span> ${down} down</span>
+      </div>`;
+    // show down/partial ones explicitly (up nodes too numerous)
+    const problems = iIds
+      .filter(id => INFRA_STATUS[id].status !== 'up')
+      .slice(0, 6);
+    if (problems.length && GRAPH) {
+      problems.forEach(id => {
+        const node = GRAPH.nodes.find(n => n.id === id);
+        const label = node ? node.label : id;
+        const st = INFRA_STATUS[id];
+        const col = INFRA_COLORS[st.status];
+        html += `<div class="row" style="font-size:10px">
+          <span style="color:${col}">${escapeHtml(label)}</span>
+          <span style="color:var(--dim)">${st.status}</span>
+        </div>`;
+      });
+    }
+    // expiring certs (< 30 days or expired)
+    const certWarn = iIds
+      .filter(id => INFRA_STATUS[id].cert && INFRA_STATUS[id].cert.days_left !== undefined && INFRA_STATUS[id].cert.days_left < 30)
+      .sort((a, b) => INFRA_STATUS[a].cert.days_left - INFRA_STATUS[b].cert.days_left)
+      .slice(0, 5);
+    if (certWarn.length && GRAPH) {
+      html += `<h3 style="margin-top:8px">CERTS EXPIRING</h3>`;
+      certWarn.forEach(id => {
+        const node = GRAPH.nodes.find(n => n.id === id);
+        const label = node ? node.label : id;
+        const d = INFRA_STATUS[id].cert.days_left;
+        const col = d < 0 ? INFRA_COLORS.down : (d < 7 ? '#ff9c42' : '#e8d76a');
+        const txt = d < 0 ? `expired ${-d}d ago` : `${d}d left`;
+        html += `<div class="row" style="font-size:10px">
+          <span style="color:${col}">${escapeHtml(label)}</span>
+          <span style="color:var(--dim)">${txt}</span>
+        </div>`;
+      });
+    }
+  }
+  // health
+  const hKeys = Object.keys(HEALTH);
+  if (hKeys.length) {
+    html += `<h3 style="margin-top:8px">PROJECT HEALTH</h3>`;
+    hKeys.forEach(pid => {
+      const h = HEALTH[pid];
+      const col = HEALTH_COLORS[h.overall] || '#666';
+      // aggregate dirty + url status
+      let dirty = 0, untracked = 0, todos = 0;
+      (h.paths || []).forEach(p => {
+        if (p.git) { dirty += p.git.dirty || 0; untracked += p.git.untracked || 0; }
+        if (typeof p.todos === 'number') todos += p.todos;
+      });
+      const urlSummary = (h.urls || []).map(u => {
+        if (u.status == null) return '✗';
+        if (u.status >= 500) return '5xx';
+        if (u.status >= 400) return u.status;
+        return '✓';
+      }).join(' ');
+      const dirtyStr = (dirty || untracked)
+        ? `<span style="color:#e8d76a">${dirty}d/${untracked}u</span>`
+        : `<span style="color:#7be0a8">clean</span>`;
+      html += `<div class="row" style="font-size:10px">
+        <span><span style="color:${col}">●</span> ${escapeHtml(pid)}</span>
+        <span>${dirtyStr}${todos ? ` · <span style="color:var(--dim)">${todos} TODO</span>` : ''}${urlSummary ? ` · ${urlSummary}` : ''}</span>
+      </div>`;
+    });
+  }
+  // conflicts
+  if (CONFLICTS.length) {
+    html += `<h3 style="margin-top:8px;color:#ffd84d">⚠ CONFLICTS</h3>`;
+    CONFLICTS.slice(0, 4).forEach(c => {
+      const short = (c.file || '').split('/').slice(-2).join('/');
+      html += `<div class="row" style="font-size:10px">
+        <span style="color:#ffd84d">${escapeHtml(short)}</span>
+        <span style="color:var(--dim)">${c.sessions.length} sess</span>
+      </div>`;
+    });
+  }
+  // external signals (sitemap diffs, HN/Reddit mentions, GH releases)
+  if (SIGNALS.items && SIGNALS.items.length) {
+    const cutoff = Math.floor(Date.now() / 1000) - 7 * 86400;
+    const recent = SIGNALS.items.filter(i => (i.ts || 0) > cutoff).slice(0, 8);
+    if (recent.length) {
+      html += `<h3 style="margin-top:8px">SIGNALS (7d)</h3>`;
+      recent.forEach(i => {
+        const col = SIGNAL_SRC_COLOR[i.src] || '#888';
+        const ageH = Math.floor((Date.now() / 1000 - i.ts) / 3600);
+        const ageStr = ageH < 24 ? `${ageH}h` : `${Math.floor(ageH/24)}d`;
+        const t = (i.title || '').substring(0, 50);
+        const url = (i.url || '').replace(/"/g, '');
+        html += `<div class="row" style="font-size:10px">
+          <span><span style="color:${col}">●</span> <a href="${escapeHtml(url)}" target="_blank" style="color:#ddd;text-decoration:none">${escapeHtml(t)}</a></span>
+          <span style="color:var(--dim)">${i.src} · ${ageStr}</span>
+        </div>`;
+      });
+    }
+  }
+  // ext agents (Phase 6c: non-Claude CLI/dev agents on this machine)
+  if (PROCESSES.agents && PROCESSES.agents.length) {
+    html += `<h3 style="margin-top:8px;color:#5ef0a8">EXT AGENTS</h3>`;
+    PROCESSES.agents.slice(0, 10).forEach(a => {
+      const col = AGENT_KIND_COLOR[a.agent_kind] || '#888';
+      const proj = a.project_id || '—';
+      const conn = (a.network || []).length;
+      html += `<div class="row" style="font-size:10px">
+        <span><span style="color:${col}">●</span> ${escapeHtml(a.agent_kind)} <span style="color:var(--dim)">pid${a.pid}</span></span>
+        <span style="color:#ddd">${escapeHtml(proj)} · ${a.cpu_pct}% · ${conn}c</span>
+      </div>`;
+    });
+  }
+  // anomalies (Phase 5b: cost/msg/tool spikes + new tool/mcp detection)
+  if (ANOMALIES.items && ANOMALIES.items.length) {
+    const recent = ANOMALIES.items.slice(-12).reverse();
+    html += `<h3 style="margin-top:8px;color:#ff5f6f">ANOMALIES (recent)</h3>`;
+    recent.forEach(a => {
+      const col = ANOM_KIND_COLOR[a.kind] || '#888';
+      const proj = a.project_id || '?';
+      html += `<div class="row" style="font-size:10px">
+        <span><span style="color:${col}">●</span> ${escapeHtml(a.kind)} <span style="color:var(--dim)">${escapeHtml(proj)}</span></span>
+        <span style="color:#ddd">${escapeHtml(String(a.detail || '').slice(0, 60))}</span>
+      </div>`;
+    });
+  }
+  panel.innerHTML = html;
+}
+
+// live update: poll graph_data.js every 5s, detect new generated_at, re-import
+async function poll() {
+  try {
+    const r = await fetch('graph_data.js?t=' + Date.now(), { cache: 'no-store' });
+    if (!r.ok) return;
+    const txt = await r.text();
+    // extract JSON object from `window.GRAPH_DATA = {...};`
+    const m = txt.match(/window\.GRAPH_DATA\s*=\s*(\{[\s\S]*\});\s*$/);
+    if (!m) return;
+    const fresh = JSON.parse(m[1]);
+    if (fresh.generated_at !== lastBuildTime) {
+      bootstrap(fresh);
+    }
+  } catch (e) { /* silent */ }
+}
+setInterval(poll, 5000);
+
+// ---------- LIVE SESSIONS ----------
+// file:// blocks fetch — load via dynamic <script> tag pointing at sessions.js
+// The JS file sets window.LIVE_SESSIONS and calls window.__onLiveSessions(data)
+window.__onLiveSessions = function(data) {
+  SESSIONS = (data && data.sessions) || {};
+  renderSessions();
+};
+
+let sessionScriptEl = null;
+function reloadSessions() {
+  if (sessionScriptEl) {
+    try { sessionScriptEl.remove(); } catch(e) {}
+  }
+  sessionScriptEl = document.createElement('script');
+  sessionScriptEl.src = 'activity/sessions.js?t=' + Date.now();
+  sessionScriptEl.onerror = () => { /* file may not exist yet */ };
+  document.head.appendChild(sessionScriptEl);
+}
+setInterval(reloadSessions, 1500);
+reloadSessions();
+
+function shortId(s) { return s.substring(0, 8); }
+
+function renderSessions() {
+  const now = Date.now() / 1000;
+  const list = Object.values(SESSIONS).filter(s => now - (s.last_event_at || 0) < 600); // 10 min window
+  const panel = document.getElementById('sessions');
+  const root = document.getElementById('sessions-list');
+  if (!list.length) {
+    panel.style.display = 'none';
+    // cleanup orphan ghosts
+    Object.keys(SESSION_NODES).forEach(sid => removeGhost(sid));
+    return;
+  }
+  panel.style.display = 'block';
+
+  // sort by last event (recent first)
+  list.sort((a, b) => (b.last_event_at || 0) - (a.last_event_at || 0));
+
+  let html = '';
+  list.forEach(s => {
+    const age = now - (s.last_event_at || 0);
+    const idle = age > 30 || !s.active;
+    const dotCls = idle ? 'dot-idle' : 'dot-live';
+    html += `<div class="sess">
+      <div class="row"><span class="id"><span class="dot-live ${dotCls}"></span>${shortId(s.id)}</span><span style="color:var(--dim)">${Math.floor(age)}s ago</span></div>
+      <div class="meta">${escapeHtml(s.project_id || '—')} · ${escapeHtml((s.cwd || '').split(/[\\/]/).slice(-2).join('/'))} · ${s.tool_count || 0} tools</div>
+      ${s.current_tool ? `<div class="cur">▸ ${escapeHtml(s.current_tool)} ${s.current_target ? '· ' + escapeHtml((s.current_target||'').slice(-60)) : ''}</div>` : ''}
+    </div>`;
+  });
+  root.innerHTML = html;
+
+  // update ghost nodes in scene + hot edges
+  const seenSids = new Set();
+  list.forEach(s => {
+    seenSids.add(s.id);
+    upsertGhost(s);
+    // ONLY fire hot edges for actively working sessions:
+    // - session marked active by hooks AND
+    // - last event within 30s (live tool use)
+    const age = now - (s.last_event_at || 0);
+    if (s.active && age < 30) {
+      updateHotEdges(s, now);
+    }
+  });
+  // remove ghosts for sessions not seen
+  Object.keys(SESSION_NODES).forEach(sid => {
+    if (!seenSids.has(sid)) removeGhost(sid);
+  });
+
+  // decay hot edges — also record into LAST_HOT_TS so red trickle persists for STALE_WINDOW
+  for (const [key, info] of HOT_EDGES) {
+    if (now > info.until_ts) {
+      LAST_HOT_TS.set(key, now);  // edge just went cold
+      HOT_EDGES.delete(key);
+    }
+  }
+  // GC LAST_HOT_TS entries older than STALE_WINDOW (anti-bloat)
+  if (Math.random() < 0.02) {
+    const cutoff = now - STALE_WINDOW;
+    for (const [k, ts] of LAST_HOT_TS) if (ts < cutoff) LAST_HOT_TS.delete(k);
+  }
+}
+
+function ghostMaterial() {
+  // hot red glow sprite
+  const size = 128;
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const ctx = c.getContext('2d');
+  const g = ctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
+  g.addColorStop(0, '#ffffff');
+  g.addColorStop(0.15, '#ffd0d0');
+  g.addColorStop(0.4, '#ff5252aa');
+  g.addColorStop(1, '#ff525200');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, size, size);
+  const tex = new THREE.CanvasTexture(c);
+  return new THREE.SpriteMaterial({ map: tex, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true });
+}
+const GHOST_MAT = ghostMaterial();
+
+function upsertGhost(sess) {
+  // Per-session CORE ghost: warm-white glow, big sprite, labeled.
+  // Replaces single static core. Each session = its own live agent node.
+  let ghost = SESSION_NODES[sess.id];
+  if (!GRAPH || !Graph) return;
+  const staticCore = GRAPH.nodes.find(n => n.id === 'core');
+  if (!staticCore || staticCore.x === undefined) return;
+
+  // cancel any pending fade-out (session resurrected)
+  if (GHOST_FADING[sess.id]) { delete GHOST_FADING[sess.id]; }
+
+  // arrange session cores around static-core position in expanding ring
+  // base radius 110 (5x), stagger each new session further out by 30
+  const sidHash = [...sess.id].reduce((a, c) => a + c.charCodeAt(0), 0);
+  const existingCount = Object.keys(SESSION_NODES).length;
+  const r = 110 + existingCount * 30;
+  const ang = sidHash * 0.7;
+  const tx = staticCore.x + Math.cos(ang) * r;
+  const ty = staticCore.y + Math.sin(ang * 1.3) * r;
+  const tz = staticCore.z + Math.sin(ang) * r * 0.5;
+  const coreCol = TYPE_COLOR.core; // warm white
+  const label = sessShortLabel(sess);
+
+  if (!ghost) {
+    const grp = new THREE.Group();
+    // inner solid sphere
+    const m = new THREE.Mesh(new THREE.SphereGeometry(1.2, 12, 12),
+      new THREE.MeshBasicMaterial({ color: coreCol }));
+    grp.add(m);
+    // outer warm-white glow sprite
+    const spriteMat = glowSprite(coreCol).clone();
+    const sprite = new THREE.Sprite(spriteMat);
+    sprite.scale.set(11, 11, 1);
+    grp.add(sprite);
+    // text label below
+    const lab = makeLabelSprite(label, coreCol);
+    lab.position.set(0, -5, 0);
+    grp.add(lab);
+    grp.__pulsePhase = Math.random() * Math.PI * 2;
+    grp.__labelText = label;
+    grp.__labelSprite = lab;
+    grp.position.set(tx, ty, tz);
+    grp.__coreId = coreSessId(sess.id);
+    Graph.scene().add(grp);
+    SESSION_NODES[sess.id] = grp;
+    CORE_SESS_MAP[grp.__coreId] = sess.id;
+  } else {
+    ghost.position.set(tx, ty, tz);
+    // re-render label if it changed (e.g. project became known)
+    if (ghost.__labelText !== label) {
+      ghost.remove(ghost.__labelSprite);
+      const lab = makeLabelSprite(label, coreCol);
+      lab.position.set(0, -5, 0);
+      ghost.add(lab);
+      ghost.__labelText = label;
+      ghost.__labelSprite = lab;
+    }
+    // reset opacity on resurrection
+    ghost.children.forEach(ch => {
+      if (ch.material) ch.material.opacity = 1;
+    });
+  }
+  SESSION_NODES[sess.id].__sess = sess;
+}
+
+function removeGhost(sid) {
+  // start 30s fade-out instead of instant removal
+  const g = SESSION_NODES[sid];
+  if (!g) return;
+  if (GHOST_FADING[sid]) return; // already fading
+  GHOST_FADING[sid] = { start_ts: Date.now() / 1000, group: g, sid };
+}
+
+// fade-out loop — runs every 500ms; full removal after 30s
+setInterval(() => {
+  const now = Date.now() / 1000;
+  const FADE_SEC = 30;
+  for (const [sid, info] of Object.entries(GHOST_FADING)) {
+    const age = now - info.start_ts;
+    const t = Math.min(1, age / FADE_SEC);
+    const opacity = 1 - t;
+    info.group.children.forEach(ch => {
+      if (ch.material) {
+        ch.material.transparent = true;
+        ch.material.opacity = opacity;
+      }
+    });
+    if (t >= 1) {
+      Graph.scene().remove(info.group);
+      delete SESSION_NODES[sid];
+      delete CORE_SESS_MAP[coreSessId(sid)];
+      delete GHOST_FADING[sid];
+    }
+  }
+}, 500);
+
+// ---------------- Ext agents (Phase 6c) ----------------
+function upsertExtAgent(agent) {
+  if (!GRAPH || !Graph) return;
+  const pid = agent.pid;
+  const kind = agent.agent_kind || 'python';
+  const projId = agent.project_id;
+  const anchor = projId ? GRAPH.nodes.find(n => n.id === projId) : GRAPH.nodes.find(n => n.id === 'core');
+  if (!anchor || anchor.x === undefined) return;
+  const seed = pid + (agent.cwd || '').length;
+  const ang = seed * 0.37;
+  const r = projId ? 18 : 50;
+  const tx = anchor.x + Math.cos(ang) * r;
+  const ty = anchor.y + Math.sin(ang * 1.7) * r;
+  const tz = anchor.z + Math.sin(ang * 0.9) * r * 0.5;
+  let node = EXT_AGENT_NODES[pid];
+  const colHex = AGENT_KIND_COLOR[kind] || '#888';
+  if (!node) {
+    const grp = new THREE.Group();
+    const col = new THREE.Color(colHex);
+    const m = new THREE.Mesh(new THREE.SphereGeometry(0.9, 10, 10), new THREE.MeshBasicMaterial({ color: col }));
+    grp.add(m);
+    const spriteMat = GHOST_MAT.clone();
+    spriteMat.color = col;
+    const sprite = new THREE.Sprite(spriteMat);
+    sprite.scale.set(5, 5, 1);
+    grp.add(sprite);
+    grp.__pulsePhase = Math.random() * Math.PI * 2;
+    grp.position.set(tx, ty, tz);
+    Graph.scene().add(grp);
+    EXT_AGENT_NODES[pid] = grp;
+    node = grp;
+  } else {
+    node.position.set(tx, ty, tz);
+  }
+  node.__agent = agent;
+}
+function removeExtAgent(pid) {
+  const g = EXT_AGENT_NODES[pid];
+  if (g) { Graph.scene().remove(g); delete EXT_AGENT_NODES[pid]; }
+}
+function upsertExtInfra(host) {
+  if (!GRAPH || !Graph) return;
+  let node = EXT_INFRA_NODES[host];
+  if (node) return;
+  const core = GRAPH.nodes.find(n => n.id === 'core');
+  if (!core || core.x === undefined) return;
+  const seed = [...host].reduce((a,c)=>a+c.charCodeAt(0),0);
+  const ang = seed * 0.13;
+  const r = 80;
+  const grp = new THREE.Group();
+  const col = new THREE.Color('#ff5fbf');
+  const m = new THREE.Mesh(new THREE.SphereGeometry(0.6, 8, 8), new THREE.MeshBasicMaterial({ color: col }));
+  grp.add(m);
+  const spriteMat = GHOST_MAT.clone();
+  spriteMat.color = col;
+  const sprite = new THREE.Sprite(spriteMat);
+  sprite.scale.set(3, 3, 1);
+  grp.add(sprite);
+  grp.position.set(core.x + Math.cos(ang) * r, core.y + Math.sin(ang*1.3) * r, core.z + Math.sin(ang) * r * 0.5);
+  Graph.scene().add(grp);
+  EXT_INFRA_NODES[host] = grp;
+}
+// ---------------- Web ghost nodes (Step 3) ----------------
+function upsertWebNode(id, host) {
+  if (!GRAPH || !Graph) return;
+  if (WEB_NODES[id]) return WEB_NODES[id];
+  const core = GRAPH.nodes.find(n => n.id === 'core');
+  if (!core || core.x === undefined) return null;
+  const seed = [...id].reduce((a,c)=>a+c.charCodeAt(0),0);
+  const ang = seed * 0.21;
+  const r = 90;
+  const grp = new THREE.Group();
+  const col = new THREE.Color('#ffd84d');  // gold for web (search/fetch)
+  const m = new THREE.Mesh(new THREE.SphereGeometry(0.9, 10, 10), new THREE.MeshBasicMaterial({ color: col }));
+  grp.add(m);
+  const spriteMat = GHOST_MAT.clone();
+  spriteMat.color = col;
+  const sprite = new THREE.Sprite(spriteMat);
+  sprite.scale.set(4, 4, 1);
+  grp.add(sprite);
+  grp.position.set(core.x + Math.cos(ang) * r, core.y + Math.sin(ang*1.3) * r, core.z + Math.sin(ang) * r * 0.5);
+  grp.__host = host;
+  grp.__webId = id;
+  Graph.scene().add(grp);
+  WEB_NODES[id] = grp;
+  return grp;
+}
+
+function handleTraffic(data) {
+  if (!data || !data.events) return;
+  const now = Date.now() / 1000;
+  data.events.forEach(ev => {
+    const myCore = coreSessId(ev.session_id || '');
+    if (ev.kind === 'web') {
+      const wid = ev.target_node;
+      upsertWebNode(wid, ev.host);
+      // hot edge session-core → web ghost
+      HOT_EDGES.set(myCore + '|' + wid, { until_ts: now + 25 });
+      LAST_HOT_TS.set(myCore + '|' + wid, now);
+    } else if (ev.kind === 'file' && ev.target) {
+      // try infer project
+      const low = (ev.target || '').toLowerCase().replace(/\\/g, '/');
+      // Map cwd substrings (lowercase) to project node ids. Mirror PROJECT_TAGS in build_graph.py.
+      const PROJ_TAGS = [
+        ['neural-graph','proj_neural_graph'], ['memory','proj_neural_graph'],
+      ];
+      for (const [t, p] of PROJ_TAGS) {
+        if (low.includes(t)) {
+          const ex = HOT_EDGES.get(myCore + '|' + p);
+          const newWeight = Math.min(20, ((ex && ex.weight) || 1) + 1);
+          HOT_EDGES.set(myCore + '|' + p, { until_ts: now + 30, weight: newWeight });
+          break;
+        }
+      }
+    }
+  });
+  // refresh tube intensity if active
+  if (MODE === 'traffic') refreshTubes();
+}
+
+// =========== Per-session-core FX: snake-along-curve animation ===========
+// State per edge:  {curve, line, head, lastHit_ts, head_t, state: 'forward'|'retract', retract_start_ts}
+let SESS_CORE_FX = new Map();   // ckey -> entry above
+const FORWARD_SPEED = 0.45;     // head_t units per second (forward); ~2.2s full traversal
+const RETRACT_SEC = 30;         // user-spec: 30s reverse fade
+
+function buildCurveBetween(p1, p2) {
+  const v1 = new THREE.Vector3(p1.x, p1.y, p1.z);
+  const v2 = new THREE.Vector3(p2.x, p2.y, p2.z);
+  const dir = v2.clone().sub(v1);
+  const dist = dir.length();
+  if (dist < 0.01) return null;
+  const dn = dir.clone().normalize();
+  const worldY = new THREE.Vector3(0, 1, 0);
+  let perp = worldY.clone().sub(dn.clone().multiplyScalar(worldY.dot(dn)));
+  if (perp.lengthSq() < 0.001) {
+    const worldX = new THREE.Vector3(1, 0, 0);
+    perp = worldX.clone().sub(dn.clone().multiplyScalar(worldX.dot(dn)));
+  }
+  perp.normalize();
+  const mid = v1.clone().add(v2).multiplyScalar(0.5).add(perp.multiplyScalar(dist * 0.3));
+  return new THREE.QuadraticBezierCurve3(v1, mid, v2);
+}
+
+function buildSnakeHead() {
+  // bright green sprite as "snake head" — small (per user "тоньше")
+  const mat = glowSprite('#5eff8a').clone();
+  const sp = new THREE.Sprite(mat);
+  sp.scale.set(1.6, 1.6, 1);
+  return sp;
+}
+
+function destroyFx(entry) {
+  if (entry.line) {
+    Graph.scene().remove(entry.line);
+    entry.line.geometry.dispose();
+    entry.line.material.dispose();
+  }
+  if (entry.head) Graph.scene().remove(entry.head);
+}
+
+function refreshSessCoreLines() {
+  if (!Graph || !GRAPH) return;
+  if (MODE === 'topology') {
+    // hide all
+    SESS_CORE_FX.forEach(e => destroyFx(e));
+    SESS_CORE_FX.clear();
+    return;
+  }
+  const now = Date.now() / 1000;
+  const seenC = new Set();
+  // 1) for each session-core HOT edge: ensure FX entry, update curve, mark forward state
+  for (const [key, info] of HOT_EDGES) {
+    const [a, b] = key.split('|');
+    if (!a.startsWith('core_') && !b.startsWith('core_')) continue;
+    // ONLY draw snake to project nodes (avoid forest of snakes for every file/mcp)
+    const fromId = a.startsWith('core_') ? a : b;
+    const toId   = a.startsWith('core_') ? b : a;
+    if (!toId.startsWith('proj_')) continue;
+    if (typeof PROJECT_FILTER !== 'undefined' && PROJECT_FILTER) {
+      if (!isVisibleUnderFilter(a) || !isVisibleUnderFilter(b)) continue;
+    }
+    const ckey = fromId + '||' + toId;
+    if (seenC.has(ckey)) continue;
+    seenC.add(ckey);
+    const p1 = findNodePos(fromId);
+    const p2 = findNodePos(toId);
+    if (!p1 || !p2) continue;
+    const curve = buildCurveBetween(p1, p2);
+    if (!curve) continue;
+
+    let entry = SESS_CORE_FX.get(ckey);
+    if (!entry) {
+      const pts = curve.getPoints(24);
+      const geom = new THREE.BufferGeometry().setFromPoints(pts);
+      const mat = new THREE.LineBasicMaterial({
+        color: 0x5eff8a, transparent: true, opacity: 0.18,
+      });
+      const line = new THREE.Line(geom, mat);
+      Graph.scene().add(line);
+      const head = buildSnakeHead();
+      Graph.scene().add(head);
+      entry = { curve, line, head, head_t: 0, state: 'forward', lastHit_ts: now, retract_start_ts: 0 };
+      SESS_CORE_FX.set(ckey, entry);
+    } else {
+      // refresh geometry (positions drift)
+      entry.curve = curve;
+      entry.line.geometry.dispose();
+      entry.line.geometry = new THREE.BufferGeometry().setFromPoints(curve.getPoints(24));
+      // resurrect from retract
+      entry.state = 'forward';
+      entry.lastHit_ts = now;
+    }
+  }
+  // 2) for entries no longer present in HOT_EDGES → start retract (if not already)
+  for (const [ckey, entry] of SESS_CORE_FX) {
+    if (!seenC.has(ckey) && entry.state === 'forward') {
+      entry.state = 'retract';
+      entry.retract_start_ts = now;
+    }
+  }
+  // 3) GC: any entry whose retract finished
+  for (const [ckey, entry] of [...SESS_CORE_FX]) {
+    if (entry.state === 'retract' && (now - entry.retract_start_ts) > RETRACT_SEC) {
+      destroyFx(entry);
+      SESS_CORE_FX.delete(ckey);
+    }
+  }
+}
+// refresh structure 4x/sec
+setInterval(refreshSessCoreLines, 250);
+
+// per-frame snake animation
+let __lastFxFrame = performance.now();
+function animateSessCoreFX() {
+  const now = performance.now();
+  const dt = Math.min(0.1, (now - __lastFxFrame) / 1000);
+  __lastFxFrame = now;
+  const tsec = Date.now() / 1000;
+  SESS_CORE_FX.forEach(entry => {
+    if (entry.state === 'forward') {
+      entry.head_t += FORWARD_SPEED * dt;
+      if (entry.head_t >= 1) entry.head_t = 0; // loop
+      const p = entry.curve.getPoint(entry.head_t);
+      entry.head.position.copy(p);
+      entry.head.material.opacity = 0.95;
+      entry.line.material.opacity = 0.25;
+    } else { // retract
+      const age = tsec - entry.retract_start_ts;
+      const t = Math.min(1, age / RETRACT_SEC);
+      // pull head from current position back to t=0
+      // freeze head_t at retract start, then head_t shrinks linearly to 0 over RETRACT_SEC
+      if (entry.__retractFrom === undefined) entry.__retractFrom = entry.head_t || 1;
+      entry.head_t = entry.__retractFrom * (1 - t);
+      const p = entry.curve.getPoint(Math.max(0, entry.head_t));
+      entry.head.position.copy(p);
+      const fade = 1 - t;
+      entry.head.material.opacity = fade * 0.95;
+      entry.line.material.opacity = fade * 0.22;
+      // tint: green→red over retract
+      entry.line.material.color.setHex(0x5eff8a).lerp(new THREE.Color(0xff5555), t);
+      entry.head.material.color = entry.line.material.color;
+    }
+  });
+}
+// hook into existing per-frame loop
+const _origAnimateGhosts = animateGhosts;
+animateGhosts = function (t) {
+  _origAnimateGhosts(t);
+  animateSessCoreFX();
+};
+
+let EXT_LINES = [];  // THREE.Line objects (cleared each refresh)
+function clearExtLines() {
+  EXT_LINES.forEach(l => Graph.scene().remove(l));
+  EXT_LINES = [];
+}
+function drawExtLine(p1, p2, color) {
+  const geom = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(p1.x, p1.y, p1.z),
+    new THREE.Vector3(p2.x, p2.y, p2.z),
+  ]);
+  const mat = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.55 });
+  const ln = new THREE.Line(geom, mat);
+  Graph.scene().add(ln);
+  EXT_LINES.push(ln);
+}
+function refreshExtAgentScene() {
+  if (!GRAPH || !Graph) return;
+  const seenPids = new Set();
+  (PROCESSES.agents || []).forEach(a => {
+    seenPids.add(a.pid);
+    upsertExtAgent(a);
+    (a.network || []).forEach(n => { if (n.host) upsertExtInfra(n.host); });
+  });
+  Object.keys(EXT_AGENT_NODES).forEach(pid => {
+    if (!seenPids.has(parseInt(pid, 10)) && !seenPids.has(pid)) removeExtAgent(pid);
+  });
+  // redraw lines
+  clearExtLines();
+  (PROCESSES.agents || []).forEach(a => {
+    const an = EXT_AGENT_NODES[a.pid];
+    if (!an) return;
+    if (a.project_id) {
+      const proj = GRAPH.nodes.find(n => n.id === a.project_id);
+      if (proj && proj.x !== undefined) drawExtLine(an.position, proj, AGENT_KIND_COLOR[a.agent_kind] || '#888');
+    }
+    (a.network || []).forEach(n => {
+      const inf = EXT_INFRA_NODES[n.host];
+      if (inf) drawExtLine(an.position, inf.position, '#ff5fbf');
+    });
+  });
+}
+
+function updateHotEdges(sess, now) {
+  if (!GRAPH) return;
+  const focusIds = new Set();
+  if (sess.project_id) focusIds.add(sess.project_id);
+  (sess.recent_mcps || []).forEach(mid => focusIds.add(mid));
+  (sess.recent_files || []).forEach(f => {
+    if (!f) return;
+    // match by path or filename (case-insensitive, accept partial)
+    const lf = f.toLowerCase();
+    const fname = lf.split(/[\\/]/).pop();
+    const n = GRAPH.nodes.find(nn =>
+      (nn.path && nn.path.toLowerCase() === lf) ||
+      (nn.file && nn.file.toLowerCase() === fname)
+    );
+    if (n) focusIds.add(n.id);
+  });
+
+  const ids = [...focusIds];
+  if (ids.length === 0) return;
+
+  // per-session core anchor — each session is its own "core" agent
+  const myCore = coreSessId(sess.id);
+
+  // create hot edges:
+  //  (a) pairs between all focus nodes
+  for (let i = 0; i < ids.length; i++) {
+    for (let j = i+1; j < ids.length; j++) {
+      HOT_EDGES.set(ids[i] + '|' + ids[j], { until_ts: now + 20 });
+      HOT_EDGES.set(ids[j] + '|' + ids[i], { until_ts: now + 20 });
+    }
+  }
+  //  (b) edges from session-core to each focus
+  ids.forEach(id => {
+    HOT_EDGES.set(myCore + '|' + id, { until_ts: now + 20 });
+    HOT_EDGES.set(id + '|' + myCore, { until_ts: now + 20 });
+  });
+  //  (c) edges to any node directly linked to a focus node (light up the immediate neighborhood)
+  GRAPH.edges.forEach(e => {
+    if (focusIds.has(e.from) || focusIds.has(e.to)) {
+      const dur = 12; // shorter decay
+      HOT_EDGES.set(e.from + '|' + e.to, { until_ts: now + dur });
+      HOT_EDGES.set(e.to + '|' + e.from, { until_ts: now + dur });
+    }
+  });
+}
+
+// extend pulse loop: also pulse ghosts
+const origAnimatePulse = animatePulse;
+function animateGhosts(now) {
+  Object.values(SESSION_NODES).forEach(g => {
+    if (g.__pulsePhase !== undefined) {
+      const t = now * 0.001;
+      const s = 1 + Math.sin(t * 3 + g.__pulsePhase) * 0.25;
+      const sprite = g.children[1];
+      if (sprite) sprite.scale.set(4 * s, 4 * s, 1);
+    }
+  });
+}
+// wrap with ghost animation
+(function () {
+  const origReq = requestAnimationFrame;
+  let last = 0;
+  function frame(t) {
+    requestAnimationFrame(frame);
+    if (!tabActive || !windowFocused) return;
+    if (t - last < 50) return;
+    last = t;
+    animateGhosts(t);
+  }
+  requestAnimationFrame(frame);
+})();
+
+// override link color to HOT-GREEN when in HOT_EDGES; recently-hot = RED slow trickle
+function isHot(l) {
+  const sId = typeof l.source === 'object' ? l.source.id : l.source;
+  const tId = typeof l.target === 'object' ? l.target.id : l.target;
+  return HOT_EDGES.has(sId + '|' + tId);
+}
+function isRecentlyHot(l) {
+  const sId = typeof l.source === 'object' ? l.source.id : l.source;
+  const tId = typeof l.target === 'object' ? l.target.id : l.target;
+  const now = Date.now() / 1000;
+  const k1 = sId + '|' + tId, k2 = tId + '|' + sId;
+  const ts = Math.max(LAST_HOT_TS.get(k1) || 0, LAST_HOT_TS.get(k2) || 0);
+  return ts > 0 && (now - ts) < STALE_WINDOW;
+}
+function edgeMcpStat(l) {
+  const sId = typeof l.source === 'object' ? l.source.id : l.source;
+  const tId = typeof l.target === 'object' ? l.target.id : l.target;
+  if (sId === 'core' && EDGE_STATS[tId]) return EDGE_STATS[tId];
+  if (tId === 'core' && EDGE_STATS[sId]) return EDGE_STATS[sId];
+  return null;
+}
+Graph.linkColor(l => {
+  if (isHot(l)) return '#5eff8aee';                    // bright green = currently active
+  if (isRecentlyHot(l)) return '#ff555588';            // dim red = recently active, now cold
+  if (MODE === 'activity' || MODE === 'traffic') return '#00000000'; // hide non-hot edges
+  const stat = edgeMcpStat(l);
+  if (stat) {
+    if (stat.errorRate > 0.05) return '#ff5555cc';
+    if (stat.p50_ms > 0) return latencyColor(stat.p50_ms) + 'aa';
+  }
+  // semantic similarity edges: subtle lavender, alpha by similarity weight
+  if (l.type === 'semantic') {
+    const w = Math.max(0.45, Math.min(0.9, l.weight || 0.5));
+    const alpha = Math.round((w - 0.4) * 200).toString(16).padStart(2, '0');
+    return '#b794ff' + alpha;
+  }
+  const tId = typeof l.target === 'object' ? l.target.id : l.target;
+  const tNode = GRAPH?.nodes.find(n => n.id === tId);
+  const c = TYPE_COLOR[tNode?.type] || '#88c0d0';
+  return c + '30';
+});
+Graph.linkWidth(l => {
+  if (isHot(l)) return MODE === 'traffic' ? 4.0 : 1.8;
+  if (isRecentlyHot(l)) return 0.8;
+  if (MODE === 'activity' || MODE === 'traffic') return 0;
+  if (l.type === 'semantic') return 0.3;
+  const stat = edgeMcpStat(l);
+  if (stat && stat.count > 0) return Math.min(1.2, 0.4 + Math.log10(stat.count + 1) * 0.3);
+  return Math.min(0.9, 0.2 + (l.weight || 1) * 0.08);
+});
+// GREEN = currently working, RED = recently active (now idle), nothing = never touched.
+Graph.linkDirectionalParticleColor(l => isHot(l) ? '#5eff8a' : (isRecentlyHot(l) ? '#ff5555' : '#88c0d0'));
+Graph.linkDirectionalParticleSpeed(l => isHot(l) ? 0.04 : (isRecentlyHot(l) ? 0.006 : 0.005));
+Graph.linkDirectionalParticleWidth(l => isHot(l) ? 1.2 : (isRecentlyHot(l) ? 0.6 : 1.0));
+Graph.linkDirectionalParticles(l => isHot(l) ? 6 : (isRecentlyHot(l) ? 1 : 0));
+
+// ----- ACTIVITY MODE: opacity-dim non-touched nodes -----
+function getActiveNodeIds() {
+  // any node mentioned in current HOT_EDGES = active.
+  // No static 'core' — each session uses its own core_<sid8> id.
+  const ids = new Set();
+  for (const key of HOT_EDGES.keys()) {
+    const [a, b] = key.split('|');
+    ids.add(a); ids.add(b);
+  }
+  return ids;
+}
+
+// ----- Step 6: hover reveals local topology in traffic mode -----
+let __hoverNeighbors = new Set();
+function trafficHover(node) {
+  if (MODE !== 'traffic') return;
+  __hoverNeighbors.clear();
+  if (node && GRAPH) {
+    __hoverNeighbors.add(node.id);
+    GRAPH.edges.forEach(e => {
+      const a = typeof e.source === 'object' ? e.source.id : e.source;
+      const b = typeof e.target === 'object' ? e.target.id : e.target;
+      if (a === node.id) __hoverNeighbors.add(b);
+      else if (b === node.id) __hoverNeighbors.add(a);
+    });
+  }
+  applyModeStyling();
+}
+
+function applyModeStyling() {
+  if (!GRAPH) return;
+  let active = null;
+  if (MODE === 'activity') active = getActiveNodeIds();
+  else if (MODE === 'traffic') {
+    // traffic = ONLY core + nodes touched by HOT_EDGES + web ext nodes
+    active = getActiveNodeIds();
+  }
+  const trafficDim = MODE === 'traffic' ? 0.0 : DIM_OPACITY;  // hide fully in traffic mode
+  GRAPH.nodes.forEach(n => {
+    if (!n.__coreMat) return;
+    let dim = active && !active.has(n.id);
+    // Step 6: in traffic mode, hover-revealed neighbors get faded visibility
+    let revealOpacity = trafficDim;
+    if (MODE === 'traffic' && dim && __hoverNeighbors.has(n.id)) {
+      dim = true;
+      revealOpacity = 0.35;  // ghost-faded reveal
+    }
+    const targetOpacity = dim ? revealOpacity : 1.0;
+    n.__coreMat.transparent = true;
+    n.__coreMat.opacity = targetOpacity;
+    if (n.__glowSprite && n.__glowSprite.material) {
+      n.__glowSprite.material.opacity = dim ? revealOpacity * 0.6 : 1.0;
+    }
+  });
+}
+
+function setMode(mode) {
+  if (MODE === mode) return;
+  MODE = mode;
+  const btns = {
+    topology: { id: 'mode-topology', activeBg: '#2a3a4a', activeBorder: '#4fd6ff' },
+    activity: { id: 'mode-activity', activeBg: '#3a2a2a', activeBorder: '#ff5555' },
+    traffic:  { id: 'mode-traffic',  activeBg: '#2a3a2a', activeBorder: '#5eff8a' },
+  };
+  Object.entries(btns).forEach(([m, cfg]) => {
+    const el = document.getElementById(cfg.id);
+    if (!el) return;
+    el.classList.toggle('active', mode === m);
+    if (mode === m) { el.style.background = cfg.activeBg; el.style.color = '#fff'; el.style.borderColor = cfg.activeBorder; }
+    else { el.style.background = '#1a1a1a'; el.style.color = '#888'; el.style.borderColor = '#333'; }
+  });
+  // force re-evaluation of link + node visuals
+  Graph.linkColor(Graph.linkColor());
+  Graph.linkWidth(Graph.linkWidth());
+  Graph.linkDirectionalParticles(Graph.linkDirectionalParticles());
+  Graph.linkVisibility(Graph.linkVisibility());
+  Graph.nodeVisibility(Graph.nodeVisibility());
+  applyModeStyling();
+  refreshTubes();
+  refreshSessCoreLines();
+}
+
+document.getElementById('mode-topology').addEventListener('click', () => setMode('topology'));
+document.getElementById('mode-activity').addEventListener('click', () => setMode('activity'));
+document.getElementById('mode-traffic').addEventListener('click', () => setMode('traffic'));
+
+// re-apply opacity every 500ms (HOT_EDGES decay → active set shrinks)
+setInterval(() => { if (MODE === 'activity' || MODE === 'traffic') applyModeStyling(); }, 500);
+
+// re-evaluate link visuals every 1s so green→red→fade transitions render live
+setInterval(() => {
+  Graph.linkColor(Graph.linkColor());
+  Graph.linkWidth(Graph.linkWidth());
+  Graph.linkDirectionalParticles(Graph.linkDirectionalParticles());
+  Graph.linkDirectionalParticleColor(Graph.linkDirectionalParticleColor());
+}, 1000);
+
+// ----- Step 2: TRAFFIC TUBES (white-core + neon glow) -----
+// Only rendered in MODE === 'traffic'. Built per HOT edge between known graph nodes.
+const TUBES = new Map();   // key "from|to" -> { mesh, mat, t0 }
+function findNodePos(id) {
+  if (!GRAPH) return null;
+  // per-session core ghost: id format `core_<sid8>`
+  if (id && id.startsWith('core_')) {
+    const sid = CORE_SESS_MAP[id];
+    if (sid && SESSION_NODES[sid]) {
+      const g = SESSION_NODES[sid];
+      return { x: g.position.x, y: g.position.y, z: g.position.z };
+    }
+  }
+  const n = GRAPH.nodes.find(x => x.id === id);
+  if (n && n.x !== undefined) return n;
+  // try ext-agent ghost
+  const ag = EXT_AGENT_NODES[id];
+  if (ag) return { x: ag.position.x, y: ag.position.y, z: ag.position.z };
+  // try ext infra ghost (id format: extinfra_<host>)
+  if (id && id.startsWith('extinfra_')) {
+    const inf = EXT_INFRA_NODES[id.slice(9)];
+    if (inf) return { x: inf.position.x, y: inf.position.y, z: inf.position.z };
+  }
+  // try web ghost
+  if (WEB_NODES && WEB_NODES[id]) {
+    const w = WEB_NODES[id];
+    return { x: w.position.x, y: w.position.y, z: w.position.z };
+  }
+  return null;
+}
+function makeTube(p1, p2, intensity) {
+  const v1 = new THREE.Vector3(p1.x, p1.y, p1.z);
+  const v2 = new THREE.Vector3(p2.x, p2.y, p2.z);
+  const dir = v2.clone().sub(v1);
+  const dist = dir.length();
+  const mid = v1.clone().add(v2).multiplyScalar(0.5);
+  // match 3d-force-graph linkCurvature(0.3): world-Y projected onto plane perpendicular to dir
+  const dn = dir.clone().normalize();
+  const worldY = new THREE.Vector3(0, 1, 0);
+  let perp = worldY.clone().sub(dn.clone().multiplyScalar(worldY.dot(dn)));
+  if (perp.lengthSq() < 0.001) {
+    const worldX = new THREE.Vector3(1, 0, 0);
+    perp = worldX.clone().sub(dn.clone().multiplyScalar(worldX.dot(dn)));
+  }
+  perp.normalize();
+  mid.add(perp.multiplyScalar(dist * 0.3));
+  const curve = new THREE.QuadraticBezierCurve3(v1, mid, v2);
+  const radius = 0.45 + Math.min(2.2, intensity * 1.2);
+  const geom = new THREE.TubeGeometry(curve, 24, radius, 8, false);
+  // outer glow shell
+  const mat = new THREE.MeshBasicMaterial({
+    color: 0x5eff8a, transparent: true, opacity: 0.55,
+    blending: THREE.AdditiveBlending, depthWrite: false,
+  });
+  const mesh = new THREE.Mesh(geom, mat);
+  // inner white core (thinner tube same curve)
+  const coreGeom = new THREE.TubeGeometry(curve, 24, radius * 0.35, 6, false);
+  const coreMat = new THREE.MeshBasicMaterial({
+    color: 0xffffff, transparent: true, opacity: 0.95, depthWrite: false,
+  });
+  const core = new THREE.Mesh(coreGeom, coreMat);
+  mesh.add(core);
+  return { mesh, mat, coreMat, t0: Date.now(), curve, radius };
+}
+function clearAllTubes() {
+  TUBES.forEach(t => { Graph.scene().remove(t.mesh); t.mesh.geometry.dispose(); t.mat.dispose(); });
+  TUBES.clear();
+}
+function refreshTubes() {
+  if (!Graph || !GRAPH) return;
+  if (MODE !== 'traffic') { clearAllTubes(); return; }
+  const seen = new Set();
+  const now = Date.now() / 1000;
+  for (const [key, info] of HOT_EDGES) {
+    const [a, b] = key.split('|');
+    if (typeof PROJECT_FILTER !== 'undefined' && PROJECT_FILTER) {
+      if (!isVisibleUnderFilter(a) || !isVisibleUnderFilter(b)) continue;
+    }
+    const p1 = findNodePos(a);
+    const p2 = findNodePos(b);
+    if (!p1 || !p2) continue;
+    seen.add(key);
+    // intensity = remaining fraction of decay window + accumulated weight (Step 4)
+    const remain = Math.max(0, info.until_ts - now);
+    const w = (info.weight || 1);
+    const intensity = Math.min(2.5, (remain / 20) + Math.log10(1 + w) * 0.6);
+    let t = TUBES.get(key);
+    if (!t) {
+      t = makeTube(p1, p2, intensity);
+      Graph.scene().add(t.mesh);
+      TUBES.set(key, t);
+    } else {
+      // rebuild geometry if positions moved or radius changed significantly
+      Graph.scene().remove(t.mesh);
+      t.mesh.geometry.dispose();
+      const fresh = makeTube(p1, p2, intensity);
+      Graph.scene().add(fresh.mesh);
+      TUBES.set(key, fresh);
+    }
+  }
+  // GC tubes whose hot edge expired
+  for (const key of [...TUBES.keys()]) {
+    if (!seen.has(key)) {
+      const t = TUBES.get(key);
+      Graph.scene().remove(t.mesh);
+      t.mesh.geometry.dispose();
+      t.mat.dispose();
+      TUBES.delete(key);
+    }
+  }
+}
+// refresh tubes 5x/sec when in traffic mode (positions drift with force-graph layout)
+setInterval(() => { if (MODE === 'traffic') refreshTubes(); }, 200);
+
+// Auto-resize canvas on window resize / maximize / fullscreen
+function fitCanvas() {
+  if (!Graph) return;
+  Graph.width(window.innerWidth).height(window.innerHeight);
+}
+window.addEventListener('resize', fitCanvas);
+// also fire on first paint to be safe
+requestAnimationFrame(fitCanvas);
+
+document.getElementById('search').addEventListener('input', (e) => {
+  const q = e.target.value.toLowerCase().trim();
+  if (!q || !GRAPH) return;
+  const hit = GRAPH.nodes.find(n =>
+    n.label.toLowerCase().includes(q) ||
+    n.id.toLowerCase().includes(q) ||
+    (n.description||'').toLowerCase().includes(q)
+  );
+  if (hit) { showInfo(hit); focusCamera(hit); }
+});
+
+// =========== LEGEND / HINT panel ===========
+const TYPE_DESC = {
+  core: 'you (Claude) — center',
+  project: 'active project',
+  skill: 'capability / tool / agent',
+  mcp: 'MCP connector',
+  memory: 'long-term note (memory/*.md)',
+  feedback: 'correction rule',
+  user: 'user (Yehor)',
+  reference: 'pointer to ext system',
+  infra: 'server/host (live-probed)',
+  learned_skill: 'saved procedure (Voyager)',
+  decision: 'past decision (color = outcome)',
+  goal: 'active goal (intent)',
+  gap: '"don\'t know" cluster',
+};
+const STATUS_ROWS = [
+  { c: '#5eff8a', l: 'INFRA up',       d: 'host responded last probe (30s)' },
+  { c: '#ffc857', l: 'INFRA partial',  d: 'cert expiring / slow / partial' },
+  { c: '#ff5f6f', l: 'INFRA down',     d: 'unreachable last probe' },
+  { c: '#ff5fbf', l: 'INFRA mentioned', d: 'magenta ghost = parsed from memory but not probed yet' },
+  { c: '#5eff8a', l: 'DECISION success', d: 'outcome=success' },
+  { c: '#ff5f6f', l: 'DECISION fail',   d: 'outcome=fail' },
+  { c: '#ffc857', l: 'DECISION partial', d: 'outcome=partial' },
+];
+const EDGE_ROWS = [
+  { c: '#5eff8a', l: 'HOT edge (green)',   d: 'tool ran on this link in last ~20s' },
+  { c: '#ff8e8e', l: 'STALE-hot (red)',    d: 'recently hot, decaying — was active <60s ago' },
+  { c: '#3a4258', l: 'topology (dim)',     d: 'structural link, always rendered' },
+  { c: '#b794ff', l: 'semantic (lavender)', d: 'embedding similarity edge' },
+  { c: '#9affc8', l: 'causal',             d: 'decision -> outcome (Phase 8c)' },
+];
+const GHOST_ROWS = [
+  { c: '#fff5e6', l: 'ext-agent (claude_code)' },
+  { c: '#4fd6ff', l: 'cursor' },
+  { c: '#b794ff', l: 'aider' },
+  { c: '#ffd84d', l: 'codex' },
+  { c: '#ff9c42', l: 'ollama' },
+  { c: '#ff6b8a', l: 'anthropic_sdk' },
+  { c: '#ffaf5e', l: 'playwright' },
+  { c: '#5eff8a', l: 'python script' },
+  { c: '#7be0a8', l: 'node script' },
+  { c: '#ffd84d', l: 'WEB ghost (gold)', d: 'WebFetch/Search domain' },
+  { c: '#ff5fbf', l: 'INFRA ghost (magenta)', d: 'auto-minted novel host' },
+];
+const BG_DAEMONS = [
+  { n: 'process_watcher.py',  i: '5s',    d: 'scans non-Claude CLI agents (cursor/aider/ollama/etc.) — local CPU only, no tokens' },
+  { n: 'infra probes',        i: '30s',   d: 'pings memory-mentioned hosts — local network, no tokens' },
+  { n: 'health.py',           i: '1h',    d: 'checks project health signals — local, no tokens' },
+  { n: 'growth.py',           i: '4h',    d: 'rolls up node-type counts over time — local, no tokens' },
+  { n: 'signals.py',          i: '6h',    d: 'fetches HN/Reddit/sitemap external signals — HTTP only, NO Claude tokens' },
+  { n: 'hook_handler.py',     i: 'on event', d: 'fires on every Claude tool use — writes session state, ZERO token cost' },
+  { n: 'nightly chain (.bat)', i: '03:13 daily', d: 'reflect→decisions→baselines→anomalies→watcher→embed→build_graph→health→growth→signals→curiosity→gaps→causality→snapshot' },
+];
+const NIGHTLY_NOTE = 'NONE of these consume Claude tokens autonomously. Token cost only when YOU prompt in a session. Daemons = local Python + HTTP fetches.';
+
+function renderHintPanel() {
+  const el = document.getElementById('hint-panel');
+  if (!el) return;
+  let html = '';
+
+  // Node types
+  html += '<h4>Node Types</h4><div class="grid">';
+  for (const t of Object.keys(TYPE_COLOR)) {
+    html += `<div class="row"><span class="sw" style="background:${TYPE_COLOR[t]};color:${TYPE_COLOR[t]}"></span><span class="lab">${t}</span><span class="desc">${TYPE_DESC[t]||''}</span></div>`;
+  }
+  html += '</div>';
+
+  // Statuses
+  html += '<div class="cols"><div><h4>Statuses</h4>';
+  for (const r of STATUS_ROWS) html += `<div class="row"><span class="sw" style="background:${r.c};color:${r.c}"></span><span class="lab">${r.l}</span><span class="desc">${r.d}</span></div>`;
+  html += '</div>';
+
+  // Edge states
+  html += '<div><h4>Edge States</h4>';
+  for (const r of EDGE_ROWS) html += `<div class="row"><span class="sw line" style="background:${r.c};color:${r.c}"></span><span class="lab">${r.l}</span><span class="desc">${r.d}</span></div>`;
+  html += `<div class="row"><span class="sw tube"></span><span class="lab">TRAFFIC tube</span><span class="desc">white-core neon = active web/file flow (TRAFFIC mode)</span></div>`;
+  html += '</div></div>';
+
+  // Ghosts
+  html += '<h4>Ghosts (transient nodes)</h4><div class="grid">';
+  for (const r of GHOST_ROWS) html += `<div class="row"><span class="sw" style="background:${r.c};color:${r.c}"></span><span class="lab">${r.l}</span>${r.d?`<span class="desc">${r.d}</span>`:''}</div>`;
+  html += '</div>';
+
+  // Background daemons (the key concern: what runs autonomously)
+  html += '<h4>Autonomous background processes</h4>';
+  for (const b of BG_DAEMONS) {
+    html += `<div class="bg-row"><span class="bg-name">${b.n}</span><span class="bg-desc">${b.d}</span><span class="bg-int">${b.i}</span></div>`;
+  }
+  html += `<div style="margin-top:8px; padding:6px 8px; background:rgba(94,255,138,0.06); border-left:2px solid #5eff8a; font-size:9.5px; color:#cdd5e0;"><span class="ok">✓</span> ${NIGHTLY_NOTE}</div>`;
+
+  el.innerHTML = html;
+}
+renderHintPanel();
+document.getElementById('hint-toggle').addEventListener('click', () => {
+  document.getElementById('hint-panel').classList.toggle('open');
+});
+
+// =========== PROJECT FILTER ===========
+let PROJECT_FILTER = ''; // empty = show all
+let PROJECT_FILTER_NEIGHBORS = new Set();
+
+function buildProjectFilter() {
+  if (!GRAPH) return;
+  const sel = document.getElementById('project-filter-select');
+  if (!sel) return;
+  // preserve current selection
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">— ALL PROJECTS —</option>';
+  GRAPH.nodes
+    .filter(n => n.type === 'project')
+    .sort((a, b) => a.label.localeCompare(b.label))
+    .forEach(n => {
+      const opt = document.createElement('option');
+      opt.value = n.id;
+      opt.textContent = n.label;
+      sel.appendChild(opt);
+    });
+  if (cur) sel.value = cur;
+}
+
+function recomputeFilterNeighbors() {
+  PROJECT_FILTER_NEIGHBORS = new Set();
+  if (!PROJECT_FILTER || !GRAPH) return;
+  PROJECT_FILTER_NEIGHBORS.add(PROJECT_FILTER);
+  GRAPH.edges.forEach(e => {
+    if (e.from === PROJECT_FILTER) PROJECT_FILTER_NEIGHBORS.add(e.to);
+    else if (e.to === PROJECT_FILTER) PROJECT_FILTER_NEIGHBORS.add(e.from);
+  });
+}
+
+function isVisibleUnderFilter(nodeId) {
+  if (!PROJECT_FILTER) return true;
+  if (nodeId.startsWith('core_')) {
+    const sid = CORE_SESS_MAP[nodeId];
+    const sess = sid ? (SESSION_NODES[sid] && SESSION_NODES[sid].__sess) : null;
+    return !!(sess && sess.project_id === PROJECT_FILTER);
+  }
+  return PROJECT_FILTER_NEIGHBORS.has(nodeId);
+}
+
+document.getElementById('project-filter-select').addEventListener('change', (e) => {
+  PROJECT_FILTER = e.target.value;
+  recomputeFilterNeighbors();
+  // rebuild visibility everywhere
+  Graph.nodeVisibility(Graph.nodeVisibility());
+  Graph.linkVisibility(Graph.linkVisibility());
+  // hide/show session ghosts
+  Object.entries(SESSION_NODES).forEach(([sid, g]) => {
+    const visible = isVisibleUnderFilter(coreSessId(sid));
+    g.visible = visible;
+  });
+  refreshSessCoreLines();
+  refreshTubes();
+});
+
+// hook visibility into existing nodeVisibility
+const origNodeVis = Graph.nodeVisibility();
+Graph.nodeVisibility(n => {
+  if (n.id === 'core' && MODE !== 'topology') return false;
+  if (PROJECT_FILTER && !isVisibleUnderFilter(n.id)) return false;
+  return true;
+});
+// link visibility filter
+Graph.linkVisibility(l => {
+  const sId = typeof l.source === 'object' ? l.source.id : l.source;
+  const tId = typeof l.target === 'object' ? l.target.id : l.target;
+  // hide edges of the hidden static core in non-topology modes
+  if (MODE !== 'topology' && (sId === 'core' || tId === 'core')) return false;
+  if (!PROJECT_FILTER) return true;
+  return isVisibleUnderFilter(sId) && isVisibleUnderFilter(tId);
+});
+
+// rebuild dropdown when graph loads
+setTimeout(buildProjectFilter, 500);
+setInterval(() => { if (GRAPH && document.getElementById('project-filter-select').options.length <= 1) buildProjectFilter(); }, 2000);
+</script>
+</body>
+</html>

@@ -1,0 +1,23 @@
+{
+  "_comment": "Merge these hook entries into your ~/.claude/settings.json. Replace {NEURAL_GRAPH_PATH} with absolute path to memory/graph/hook_handler.py (e.g. C:\\Users\\YOU\\neural-graph\\memory\\graph\\hook_handler.py). install.ps1 does this automatically.",
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [ { "type": "command", "command": "py \"{NEURAL_GRAPH_PATH}\"" } ] }
+    ],
+    "UserPromptSubmit": [
+      { "hooks": [ { "type": "command", "command": "py \"{NEURAL_GRAPH_PATH}\"" } ] }
+    ],
+    "PreToolUse": [
+      { "matcher": ".*", "hooks": [ { "type": "command", "command": "py \"{NEURAL_GRAPH_PATH}\"" } ] }
+    ],
+    "PostToolUse": [
+      { "matcher": ".*", "hooks": [ { "type": "command", "command": "py \"{NEURAL_GRAPH_PATH}\"" } ] }
+    ],
+    "Stop": [
+      { "hooks": [ { "type": "command", "command": "py \"{NEURAL_GRAPH_PATH}\"" } ] }
+    ],
+    "SessionEnd": [
+      { "hooks": [ { "type": "command", "command": "py \"{NEURAL_GRAPH_PATH}\"" } ] }
+    ]
+  }
+}

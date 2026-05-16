@@ -1,0 +1,56 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+venv/
+
+# Node
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Generated graph data (rebuilt by build_graph.py)
+memory/graph/graph_data.js
+memory/graph.json
+memory/graph/embeddings.json
+memory/graph/decisions_embeddings.json
+memory/graph/goals_embeddings.json
+memory/graph/skills_embeddings.json
+
+# Runtime activity (created at first launch)
+memory/graph/activity/*
+!memory/graph/activity/.gitkeep
+memory/graph/state/*
+!memory/graph/state/.gitkeep
+memory/graph/snapshots/*
+!memory/graph/snapshots/.gitkeep
+memory/graph/decisions/*.json
+memory/graph/decisions/*.jsonl
+memory/daily/*.md
+!memory/daily/.gitkeep
+
+# Personal memory files (each user accumulates own)
+memory/project_*.md
+memory/feedback_*.md
+memory/user_*.md
+memory/reference_*.md
+memory/_inbox.jsonl
+memory/_scratchpad.md
+
+# Local state
+*.log
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Electron build artifacts
+dist/
+out/
+*.exe.blockmap

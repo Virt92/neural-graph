@@ -1,0 +1,15 @@
+{
+  "name": "claude-neural-graph",
+  "version": "0.1.0",
+  "description": "Live visualizer of Claude Code sessions, projects, skills, MCPs, and infra connections.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win --x64"
+  },
+  "author": "claude+yehor",
+  "license": "ISC",
+  "devDependencies": {
+    "electron": "^31.0.0"
+  }
+}

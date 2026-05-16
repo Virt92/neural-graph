@@ -1,0 +1,13 @@
+# Active goals tracked by neural-graph
+# Schema: each entry is a goal with id/title/why/status/projects/scope/owner/created
+# Status values: active | done | dropped
+# Example:
+#   - id: goal_example
+#     title: Migrate auth to OAuth2
+#     why: legacy session cookies fail compliance audit
+#     status: active
+#     projects: [proj_backend]
+#     scope: [auth/, middleware/]
+#     owner: claude
+#     created: 2026-05-16
+goals: []
