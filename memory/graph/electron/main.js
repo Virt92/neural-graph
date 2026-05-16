@@ -262,21 +262,8 @@ function stopProcessWatcher() {
   if (watcherProc) { try { watcherProc.kill(); } catch (e) {} watcherProc = null; }
 }
 
-// Notify on new session start (track previously-seen ids)
-const seenSessions = new Set();
-function maybeNotify(data) {
-  if (!data || !data.sessions) return;
-  for (const sid of Object.keys(data.sessions)) {
-    if (!seenSessions.has(sid)) {
-      seenSessions.add(sid);
-      const s = data.sessions[sid];
-      const pid = s.project_id || 'unknown';
-      try {
-        new Notification({ title: 'Claude session started', body: `${pid} · ${s.cwd || ''}`.slice(0, 200) }).show();
-      } catch (e) { /* */ }
-    }
-  }
-}
+// Tray notifications disabled (visual ghost in graph is enough).
+function maybeNotify(_data) { /* no-op */ }
 
 // ---------------- CC transcripts scan ----------------
 // Walk PROJECTS_ROOT, find all <encoded-cwd>/<sid>.jsonl, tail size+mtime

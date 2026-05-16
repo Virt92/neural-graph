@@ -209,14 +209,9 @@ let CORE_SESS_MAP = {};    // {core_<sid8>: full_sid} — lookup for HOT_EDGES a
 let GHOST_FADING = {};     // {sid: {start_ts, group}} — sessions in 30s fade-out
 function coreSessId(sid) { return 'core_' + (sid || '').slice(0, 8); }
 function sessShortLabel(sess) {
-  // priority: agent.name (Phase 2 future) → project_id → cwd basename → sess-XXXX
+  // Label = same 8-char SID prefix shown in Active Sessions panel.
   if (sess.agent_name) return sess.agent_name;
-  if (sess.project_id) return sess.project_id.replace(/^proj_/, '');
-  if (sess.cwd) {
-    const base = (sess.cwd || '').split(/[\\/]/).filter(Boolean).pop();
-    if (base && base.length < 24) return base;
-  }
-  return 'sess-' + (sess.id || '').slice(0, 4);
+  return (sess.id || '').slice(0, 8) || 'sess-????';
 }
 function makeLabelSprite(text, color) {
   const canvas = document.createElement('canvas');
@@ -1516,20 +1511,22 @@ function upsertGhost(sess) {
   let ghost = SESSION_NODES[sess.id];
   if (!GRAPH || !Graph) return;
   const staticCore = GRAPH.nodes.find(n => n.id === 'core');
-  if (!staticCore || staticCore.x === undefined) return;
+  // fallback to origin if core hasn't received layout coords yet
+  const cx = (staticCore && typeof staticCore.x === 'number') ? staticCore.x : 0;
+  const cy = (staticCore && typeof staticCore.y === 'number') ? staticCore.y : 0;
+  const cz = (staticCore && typeof staticCore.z === 'number') ? staticCore.z : 0;
 
   // cancel any pending fade-out (session resurrected)
   if (GHOST_FADING[sess.id]) { delete GHOST_FADING[sess.id]; }
 
-  // arrange session cores around static-core position in expanding ring
-  // base radius 110 (5x), stagger each new session further out by 30
+  // Deterministic position via sidHash (no drift when other sessions added).
   const sidHash = [...sess.id].reduce((a, c) => a + c.charCodeAt(0), 0);
-  const existingCount = Object.keys(SESSION_NODES).length;
-  const r = 110 + existingCount * 30;
-  const ang = sidHash * 0.7;
-  const tx = staticCore.x + Math.cos(ang) * r;
-  const ty = staticCore.y + Math.sin(ang * 1.3) * r;
-  const tz = staticCore.z + Math.sin(ang) * r * 0.5;
+  const slot = sidHash % 8;
+  const r = 130 + slot * 25;
+  const ang = (sidHash * 0.37) % (Math.PI * 2);
+  const tx = cx + Math.cos(ang) * r;
+  const ty = cy + Math.sin(ang * 1.3) * r;
+  const tz = cz + Math.sin(ang) * r * 0.5;
   const coreCol = TYPE_COLOR.core; // warm white
   const label = sessShortLabel(sess);
 
@@ -2415,6 +2412,8 @@ function isVisibleUnderFilter(nodeId) {
   if (nodeId.startsWith('core_')) {
     const sid = CORE_SESS_MAP[nodeId];
     const sess = sid ? (SESSION_NODES[sid] && SESSION_NODES[sid].__sess) : null;
+    // active sessions always visible (even if no project_id assigned yet)
+    if (sess && sess.active) return true;
     return !!(sess && sess.project_id === PROJECT_FILTER);
   }
   return PROJECT_FILTER_NEIGHBORS.has(nodeId);
